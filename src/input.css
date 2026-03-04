@@ -1,0 +1,213 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base resets ─────────────────────────────────────────────────────────────── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    background: #0f1117;
+    color: #c9d1d9;
+    font-family:
+      -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+      sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #30363d;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #484f58;
+  }
+
+  input,
+  select,
+  button {
+    font: inherit;
+  }
+  button {
+    cursor: pointer;
+  }
+}
+
+/* ── Components ──────────────────────────────────────────────────────────────── */
+@layer components {
+  /* ─ Resize handle ─ */
+  .resize-handle {
+    @apply absolute right-0 top-0 h-full w-[3px] cursor-col-resize opacity-0 hover:opacity-100 transition-opacity z-10;
+    background: #388bfd;
+  }
+  .resize-handle.dragging {
+    @apply opacity-100;
+  }
+  th {
+    @apply relative select-none;
+  }
+
+  /* ─ Status pills ─ */
+  .pill-up {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium leading-none;
+    background: rgba(35, 134, 54, 0.15);
+    color: #3fb950;
+    border: 1px solid rgba(35, 134, 54, 0.3);
+  }
+  .pill-down {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium leading-none;
+    background: rgba(218, 54, 51, 0.12);
+    color: #f85149;
+    border: 1px solid rgba(218, 54, 51, 0.25);
+  }
+  .pill-loading {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium leading-none;
+    background: rgba(210, 153, 34, 0.15);
+    color: #e3b341;
+    border: 1px solid rgba(210, 153, 34, 0.3);
+  }
+  .pill-dot {
+    @apply w-1.5 h-1.5 rounded-full bg-current flex-shrink-0;
+  }
+  .pill-spinner {
+    @apply w-1.5 h-1.5 rounded-full flex-shrink-0 bg-current;
+    animation: spin 1s linear infinite;
+    opacity: 0.7;
+  }
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* ─ FE / BE badges ─ */
+  .badge-fe {
+    @apply inline-flex items-center px-1 rounded text-[9px] font-bold leading-4 align-middle;
+    background: rgba(31, 111, 235, 0.2);
+    color: #79c0ff;
+    border: 1px solid rgba(31, 111, 235, 0.35);
+  }
+  .badge-be {
+    @apply inline-flex items-center px-1 rounded text-[9px] font-bold leading-4 align-middle;
+    background: rgba(210, 153, 34, 0.18);
+    color: #e3b341;
+    border: 1px solid rgba(210, 153, 34, 0.3);
+  }
+
+  /* ─ Group tag chips ─ */
+  .group-tag {
+    @apply inline-block text-[10px] px-1.5 py-0 rounded leading-4;
+  }
+
+  /* ─ Color swatches ─ */
+  .color-swatch {
+    @apply w-5 h-5 rounded-full cursor-pointer transition-all opacity-60 hover:opacity-100 hover:scale-110;
+  }
+  .color-swatch.selected {
+    @apply opacity-100 scale-110 ring-2 ring-white ring-offset-1;
+    ring-offset-color: #161b22;
+  }
+
+  /* ─ Lucide icon size helpers ─
+     createIcons() replaces <i data-lucide> with <svg data-lucide>,
+     copying classes onto the svg. Target svg[data-lucide] directly. ─ */
+  svg[data-lucide] {
+    display: block;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+  }
+  svg[data-lucide].icon-xs,
+  .icon-xs svg[data-lucide] {
+    width: 11px;
+    height: 11px;
+  }
+  svg[data-lucide].icon-sm,
+  .icon-sm svg[data-lucide] {
+    width: 13px;
+    height: 13px;
+  }
+  svg[data-lucide].icon-md,
+  .icon-md svg[data-lucide] {
+    width: 15px;
+    height: 15px;
+  }
+  svg[data-lucide].icon-lg,
+  .icon-lg svg[data-lucide] {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* ─ Table fixed layout without scrollbar overlap ─ */
+  .tbl-wrapper {
+    @apply flex-1 overflow-auto;
+  }
+  .tbl-wrapper table {
+    @apply w-full border-collapse;
+    table-layout: fixed;
+  }
+  .tbl-wrapper thead {
+    @apply sticky top-0 z-10;
+    background: #161b22;
+  }
+  .tbl-wrapper tbody tr {
+    @apply border-b border-dsm-border2;
+    transition: background 0.1s;
+  }
+  .tbl-wrapper tbody tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .tbl-wrapper th {
+    @apply text-[11px] font-semibold uppercase tracking-wider text-dsm-muted px-2 py-2 text-left border-b border-dsm-border;
+  }
+  .tbl-wrapper td {
+    @apply px-2 py-1.5 text-[12px] text-dsm-text overflow-hidden text-ellipsis whitespace-nowrap;
+  }
+
+  /* ─ Sortable column headers ─ */
+  .sortable-th {
+    cursor: pointer;
+    user-select: none;
+  }
+  .sortable-th:hover {
+    color: #c9d1d9;
+  }
+  .sortable-th .sort-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .sortable-th .sort-icon {
+    opacity: 0.35;
+    transition: opacity 0.15s;
+  }
+  .sortable-th:hover .sort-icon {
+    opacity: 0.7;
+  }
+  .sortable-th.sort-active {
+    color: #c9d1d9;
+  }
+  .sortable-th.sort-active .sort-icon {
+    opacity: 1;
+    color: #58a6ff;
+  }
+}

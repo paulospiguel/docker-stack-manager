@@ -1,0 +1,72 @@
+{
+  "name": "docker-vision-manager",
+  "version": "1.1.0",
+  "description": "A desktop application to manage Docker stacks with ease.",
+  "author": {
+    "name": "Docker Vision Manager",
+    "email": "paulo.spiguel@vortal.biz"
+  },
+  "homepage": "https://github.com/paulospiguel/docker-vision-manager",
+  "main": "dist/main.js",
+  "build": {
+    "appId": "com.example.dockervisionmanager",
+    "productName": "DockerVisionManager",
+    "icon": "assets/icons/icon.png",
+    "files": [
+      "dist/**/*",
+      "scripts/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "scripts",
+        "to": "resources/scripts",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icons/icon.ico"
+    }
+  },
+  "scripts": {
+    "build:ts": "tsc",
+    "build:renderer": "esbuild src/renderer.ts --bundle --platform=browser --target=chrome120 --outfile=dist/renderer.js",
+    "build:css": "node_modules/.bin/tailwindcss -i src/input.css -o dist/styles.css",
+    "sync:assets": "mkdir -p dist && cp src/index.html dist/index.html",
+    "build": "npm run build:ts && npm run build:renderer && npm run build:css && npm run sync:assets",
+    "dist": "npm run build && electron-builder",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:win": "npm run build && electron-builder --win",
+    "watch:ts": "tsc -w",
+    "watch:renderer": "esbuild src/renderer.ts --bundle --platform=browser --target=chrome120 --outfile=dist/renderer.js --watch",
+    "watch:css": "node_modules/.bin/tailwindcss -i src/input.css -o dist/styles.css --watch",
+    "watch:assets": "chokidar \"src/index.html\" -c \"npm run sync:assets\"",
+    "dev:electron": "wait-on dist/main.js && nodemon --watch dist --ext js,html,css --exec \"electron dist/main.js\"",
+    "dev": "concurrently -k \"npm:watch:ts\" \"npm:watch:renderer\" \"npm:watch:css\" \"npm:watch:assets\" \"npm:dev:electron\"",
+    "start": "npm run build && electron dist/main.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "autoprefixer": "^10.4.27",
+    "chokidar-cli": "^3.0.0",
+    "concurrently": "^9.2.1",
+    "electron": "^37.2.3",
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.27.3",
+    "lucide": "^0.575.0",
+    "nodemon": "^3.1.10",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.2",
+    "wait-on": "^8.0.5"
+  }
+}

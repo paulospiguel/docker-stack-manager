@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Docker Vision Manager</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body
+    class="bg-dsm-bg text-dsm-text h-screen overflow-hidden flex flex-col text-[13px]"
+  >
+    <!-- Header -->
+    <header
+      class="relative flex items-center justify-between px-4 py-2 bg-dsm-panel border-b border-dsm-border flex-shrink-0"
+    >
+      <div class="flex items-center gap-2">
+        <button
+          id="sidebarToggle"
+          class="icon-md p-1.5 rounded text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors"
+          title="Toggle sidebar"
+        >
+          <i data-lucide="panel-left"></i>
+        </button>
+        <i data-lucide="container" class="icon-md text-dsm-primary"></i>
+        <h1 class="text-sm font-semibold text-dsm-text">
+          Docker Vision Manager
+        </h1>
+        <span
+          id="appVersion"
+          class="text-[10px] px-1.5 py-0.5 rounded bg-dsm-panel2 border border-dsm-border text-dsm-muted/60 font-mono select-none"
+        ></span>
+        <span
+          id="containerCount"
+          class="ml-1 text-[11px] px-2 py-0.5 rounded-full bg-dsm-panel2 border border-dsm-border text-dsm-muted font-mono"
+        ></span>
+      </div>
+      <!-- Status centered -->
+      <div
+        id="status"
+        class="absolute left-1/2 -translate-x-1/2 text-[11px] text-dsm-muted transition-colors duration-300 pointer-events-none select-none"
+      ></div>
+      <!-- Right controls -->
+      <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5 text-[11px] text-dsm-muted">
+          <i data-lucide="layers" class="icon-xs flex-shrink-0"></i>
+          <select
+            id="stackSelector"
+            class="bg-dsm-panel2 border border-dsm-border text-dsm-text rounded px-1.5 py-1 text-[11px] focus:outline-none focus:border-dsm-primary cursor-pointer max-w-[160px] truncate"
+            title="Filter by stack"
+          >
+            <option value="">All stacks</option>
+          </select>
+        </div>
+        <button
+          id="openVisionTerminal"
+          class="icon-md p-1.5 rounded text-blue-400 bg-blue-500/15 border border-blue-500/40 hover:text-blue-300 hover:bg-blue-500/25 hover:border-blue-500/60 transition-colors"
+          title="Open terminal in vision folder"
+        >
+          <i data-lucide="terminal"></i>
+        </button>
+        <button
+          id="openSettings"
+          class="icon-md p-1.5 rounded text-dsm-muted hover:text-dsm-text hover:bg-white/5 border border-transparent hover:border-dsm-border transition-colors"
+          title="Settings"
+        >
+          <i data-lucide="settings"></i>
+        </button>
+        <!-- 3-dot menu -->
+        <div class="relative">
+          <button
+            id="headerMenuBtn"
+            class="icon-md p-1.5 rounded text-dsm-muted hover:text-dsm-text hover:bg-white/5 border border-transparent hover:border-dsm-border transition-colors"
+            title="More actions"
+          >
+            <i data-lucide="more-vertical"></i>
+          </button>
+          <div
+            id="headerMenu"
+            class="hidden absolute right-0 top-full mt-1 w-56 bg-dsm-panel border border-dsm-border rounded-lg shadow-xl z-50"
+          >
+            <button
+              id="restoreFavGroups"
+              class="flex items-center gap-2 w-full px-4 py-2 text-[12px] text-yellow-400 hover:bg-yellow-500/10 transition-colors rounded-lg"
+            >
+              <i data-lucide="star" class="icon-xs"></i> Restore favorite groups
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Body: sidebar + main -->
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Sidebar -->
+      <aside
+        id="sidebar"
+        class="w-64 flex-shrink-0 flex flex-col bg-dsm-panel border-r border-dsm-border overflow-hidden transition-all duration-200"
+      >
+        <div
+          class="flex items-center justify-between px-3 py-2.5 border-b border-dsm-border2"
+        >
+          <span
+            class="text-[11px] font-semibold uppercase tracking-wider text-dsm-muted"
+            >Groups</span
+          >
+          <div class="flex items-center gap-0.5">
+            <button
+              id="newGroupBtn"
+              class="icon-sm p-1 rounded text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors"
+              title="New group"
+            >
+              <i data-lucide="plus"></i>
+            </button>
+            <!-- Groups 3-dot menu -->
+            <div class="relative">
+              <button
+                id="groupsMenuBtn"
+                class="icon-sm p-1 rounded text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors"
+                title="More options"
+              >
+                <i data-lucide="more-vertical"></i>
+              </button>
+              <div
+                id="groupsMenu"
+                class="hidden absolute right-0 top-full mt-1 w-52 bg-dsm-panel border border-dsm-border rounded-lg shadow-xl z-50"
+              >
+                <button
+                  id="sidebarRestoreGroups"
+                  class="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-yellow-400 hover:bg-yellow-500/10 transition-colors rounded-lg"
+                >
+                  <i data-lucide="star" class="icon-xs"></i> Restore default
+                  groups
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="sidebarList" class="flex-1 overflow-y-auto py-1"></div>
+      </aside>
+
+      <!-- Main panel -->
+      <div class="flex flex-col flex-1 overflow-hidden bg-dsm-bg">
+        <!-- Toolbar -->
+        <div
+          class="flex items-center justify-between gap-2 px-3 py-2 bg-dsm-panel border-b border-dsm-border flex-shrink-0 flex-wrap"
+        >
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <button
+              id="refresh"
+              class="icon-sm flex items-center gap-1 px-2.5 py-1.5 rounded text-[11px] font-medium text-dsm-muted hover:text-dsm-text bg-transparent hover:bg-white/5 border border-dsm-border hover:border-dsm-muted transition-all"
+              title="Refresh"
+            >
+              <i data-lucide="refresh-cw"></i>
+            </button>
+
+            <!-- All services -->
+            <div
+              class="flex items-center gap-1 pl-1 border-l border-dsm-border"
+            >
+              <span
+                class="text-[10px] text-dsm-muted/50 uppercase tracking-wider pr-1 select-none"
+                >All</span
+              >
+              <button
+                id="startAll"
+                class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium text-green-400 bg-green-500/10 border border-green-500/25 hover:bg-green-500/20 transition-colors"
+                title="Start all visible services"
+              >
+                <i data-lucide="play" class="icon-xs"></i> Start
+              </button>
+              <button
+                id="stopAll"
+                class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium text-red-400 bg-red-500/10 border border-red-500/25 hover:bg-red-500/20 transition-colors"
+                title="Stop all visible services"
+              >
+                <i data-lucide="square" class="icon-xs"></i> Stop
+              </button>
+            </div>
+
+            <!-- Selected services -->
+            <div
+              class="flex items-center gap-1 pl-1 border-l border-dsm-border"
+            >
+              <span
+                id="selectedLabel"
+                class="text-[10px] text-dsm-muted/50 uppercase tracking-wider pr-1 select-none"
+                >Selected</span
+              >
+              <button
+                id="startSelected"
+                disabled
+                class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium text-green-400/70 bg-green-500/5 border border-green-500/15 hover:bg-green-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                title="Start selected services"
+              >
+                <i data-lucide="play" class="icon-xs"></i> Start
+              </button>
+              <button
+                id="stopSelected"
+                disabled
+                class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium text-red-400/70 bg-red-500/5 border border-red-500/15 hover:bg-red-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                title="Stop selected services"
+              >
+                <i data-lucide="square" class="icon-xs"></i> Stop
+              </button>
+            </div>
+
+            <button
+              id="saveGroupBtn"
+              class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium text-dsm-muted border border-dsm-border hover:text-dsm-text hover:border-dsm-muted transition-colors"
+              title="Save selection as group"
+            >
+              <i data-lucide="bookmark-plus" class="icon-xs"></i> Save group
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="relative">
+              <i
+                data-lucide="search"
+                class="icon-xs absolute left-2 top-1/2 -translate-y-1/2 text-dsm-muted pointer-events-none"
+              ></i>
+              <input
+                type="search"
+                id="filterInput"
+                class="pl-7 pr-2 py-1.5 rounded text-[11px] bg-dsm-panel2 border border-dsm-border text-dsm-text placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary w-44 transition-colors"
+                placeholder="Filter..."
+              />
+            </div>
+            <div class="flex items-center gap-1.5 text-[11px] text-dsm-muted">
+              <i data-lucide="timer" class="icon-xs"></i>
+              <select
+                id="autoRefreshInterval"
+                class="bg-dsm-panel2 border border-dsm-border text-dsm-text rounded px-1.5 py-1 text-[11px] focus:outline-none focus:border-dsm-primary cursor-pointer"
+              >
+                <option value="0">Off</option>
+                <option value="5">5 s</option>
+                <option value="10" selected>10 s</option>
+                <option value="30">30 s</option>
+                <option value="60">60 s</option>
+              </select>
+            </div>
+            <span
+              id="refreshCountdown"
+              class="text-[11px] font-mono text-dsm-muted min-w-[28px] text-right tabular-nums"
+            ></span>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="tbl-wrapper">
+          <table id="mainTable">
+            <colgroup>
+              <col id="cg-check" style="width: 34px" />
+              <col id="cg-fav" style="width: 28px" />
+              <col id="cg-name" style="width: 260px" />
+              <col id="cg-id" style="width: 90px" />
+              <col id="cg-image" style="width: 260px" />
+              <col id="cg-status" style="width: 130px" />
+              <col id="cg-actions" style="width: 82px" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="!px-2 w-8 text-center">
+                  <input
+                    type="checkbox"
+                    id="selectAll"
+                    class="accent-dsm-primary"
+                  />
+                </th>
+                <th class="!px-1 w-7"></th>
+                <th data-col="cg-name" data-sort="name" class="sortable-th">
+                  <span class="sort-label"
+                    >Name<i
+                      data-lucide="chevrons-up-down"
+                      class="icon-xs sort-icon"
+                    ></i
+                  ></span>
+                </th>
+                <th data-col="cg-id">ID</th>
+                <th data-col="cg-image" data-sort="image" class="sortable-th">
+                  <span class="sort-label"
+                    >Image<i
+                      data-lucide="chevrons-up-down"
+                      class="icon-xs sort-icon"
+                    ></i
+                  ></span>
+                </th>
+                <th data-col="cg-status" data-sort="status" class="sortable-th">
+                  <span class="sort-label"
+                    >Status<i
+                      data-lucide="chevrons-up-down"
+                      class="icon-xs sort-icon"
+                    ></i
+                  ></span>
+                </th>
+                <th data-col="cg-actions" class="!text-right !pr-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="containersBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Group modal -->
+    <div
+      id="groupModal"
+      class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    >
+      <div
+        class="w-[440px] max-h-[90vh] flex flex-col rounded-xl bg-dsm-panel border border-dsm-border shadow-2xl"
+      >
+        <!-- Modal header -->
+        <div
+          class="flex items-center justify-between px-5 py-3.5 border-b border-dsm-border flex-shrink-0"
+        >
+          <h3 id="modalTitle" class="text-sm font-semibold text-dsm-text">
+            New Group
+          </h3>
+          <button
+            id="modalClose"
+            class="icon-sm p-1 rounded text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors"
+          >
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+
+        <!-- Modal body -->
+        <div class="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
+          <!-- Pre-defined group notice (shown only when editing a predefined group) -->
+          <div
+            id="modalPredefinedNote"
+            class="hidden flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/8 border border-yellow-500/25 text-yellow-400/80 text-[11px]"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="flex-shrink-0"
+            >
+              <polygon
+                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+              />
+            </svg>
+            <span class="text-[11px] text-dsm-muted/80"
+              >Predefined group — you can edit it freely, changes are
+              persisted.</span
+            >
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label
+              class="text-[11px] font-semibold text-dsm-muted uppercase tracking-wider"
+              >Name</label
+            >
+            <input
+              type="text"
+              id="groupNameInput"
+              placeholder="ex: Frontend"
+              maxlength="40"
+              class="px-3 py-2 rounded-lg bg-dsm-panel2 border border-dsm-border text-dsm-text text-[13px] placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary transition-colors"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label
+              class="text-[11px] font-semibold text-dsm-muted uppercase tracking-wider"
+              >Color</label
+            >
+            <div id="colorPicker" class="flex gap-2 flex-wrap"></div>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label
+              class="text-[11px] font-semibold text-dsm-muted uppercase tracking-wider"
+              >Containers</label
+            >
+            <div class="relative">
+              <i
+                data-lucide="search"
+                class="icon-xs absolute left-2.5 top-1/2 -translate-y-1/2 text-dsm-muted pointer-events-none"
+              ></i>
+              <input
+                type="search"
+                id="modalContainerSearch"
+                placeholder="Search containers..."
+                class="w-full pl-8 pr-3 py-1.5 rounded-lg bg-dsm-panel2 border border-dsm-border text-dsm-text text-[12px] placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary transition-colors"
+              />
+            </div>
+            <div
+              id="groupContainerList"
+              class="max-h-48 overflow-y-auto rounded-lg border border-dsm-border divide-y divide-dsm-border2"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Modal footer -->
+        <div
+          class="flex items-center gap-2 px-5 py-3.5 border-t border-dsm-border flex-shrink-0"
+        >
+          <button
+            id="modalSave"
+            class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-medium bg-dsm-primary text-white hover:bg-dsm-primary-h transition-colors"
+          >
+            <i data-lucide="check" class="icon-xs"></i> Save
+          </button>
+          <button
+            id="modalCancel"
+            class="px-4 py-1.5 rounded-lg text-[12px] font-medium text-dsm-muted border border-dsm-border hover:text-dsm-text hover:border-dsm-muted transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            id="modalDelete"
+            class="hidden ml-auto flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-medium text-red-400 bg-red-500/10 border border-red-500/25 hover:bg-red-500/20 transition-colors"
+          >
+            <i data-lucide="trash-2" class="icon-xs"></i> Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Group picker dropdown -->
+    <div
+      id="groupPicker"
+      class="hidden fixed z-[200] py-1 bg-dsm-panel border border-dsm-border rounded-lg shadow-2xl min-w-[180px] text-[12px]"
+    >
+      <div
+        class="px-3 py-1.5 text-[10px] uppercase tracking-wider text-dsm-muted border-b border-dsm-border2"
+      >
+        >Groups
+      </div>
+      <div id="groupPickerList" class="py-1 max-h-52 overflow-y-auto"></div>
+      <div class="border-t border-dsm-border2 px-2 py-1.5">
+        <button
+          id="groupPickerNew"
+          class="w-full flex items-center gap-1.5 px-2 py-1 rounded text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors"
+        >
+          <i data-lucide="plus" class="icon-xs"></i> New group
+        </button>
+      </div>
+    </div>
+
+    <!-- Context menu -->
+    <div
+      id="ctxMenu"
+      class="hidden fixed z-[200] py-1 bg-dsm-panel border border-dsm-border rounded-lg shadow-2xl min-w-[170px] text-[12px]"
+    >
+      <button
+        id="ctxStart"
+        class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors"
+      >
+        <i data-lucide="play" class="icon-xs text-green-400"></i>
+        <span id="ctxStartLabel">Start</span>
+      </button>
+      <button
+        id="ctxStop"
+        class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors"
+      >
+        <i data-lucide="square" class="icon-xs text-red-400"></i> Stop
+      </button>
+      <div
+        id="ctxBuildDivider"
+        class="hidden border-t border-dsm-border2 my-1"
+      ></div>
+      <button
+        id="ctxBuild"
+        class="hidden flex items-center gap-2 w-full px-3 py-1.5 text-left text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors"
+      >
+        <i data-lucide="hammer" class="icon-xs text-dsm-accent"></i> Force Build
+      </button>
+      <div class="border-t border-dsm-border2 my-1"></div>
+      <button
+        id="ctxTerminal"
+        class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors"
+      >
+        <i data-lucide="terminal" class="icon-xs text-blue-400"></i> Open
+        Terminal
+      </button>
+      <button
+        id="ctxLogs"
+        class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors"
+      >
+        <i data-lucide="scroll-text" class="icon-xs text-purple-400"></i> View
+        Logs
+      </button>
+    </div>
+
+    <!-- Settings modal -->
+    <div
+      id="settingsModal"
+      class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    >
+      <div
+        class="w-[460px] flex flex-col rounded-xl bg-dsm-panel border border-dsm-border shadow-2xl"
+      >
+        <!-- Header -->
+        <div
+          class="flex items-center justify-between px-5 py-3.5 border-b border-dsm-border flex-shrink-0"
+        >
+          <div class="flex items-center gap-2">
+            <i data-lucide="settings" class="icon-sm text-dsm-muted"></i>
+            <h3 class="text-sm font-semibold text-dsm-text">Settings</h3>
+          </div>
+          <button
+            id="settingsClose"
+            class="icon-sm p-1 rounded text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors"
+          >
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="px-5 py-5 space-y-5">
+          <!-- Vision Path -->
+          <div class="flex flex-col gap-1.5">
+            <label
+              class="text-[11px] font-semibold text-dsm-muted uppercase tracking-wider"
+              >Vision Folder Path</label
+            >
+            <p class="text-[11px] text-dsm-muted/70">
+              Absolute or
+              <span class="font-mono text-dsm-muted">~</span>-relative path
+              where individual service repositories live.
+            </p>
+            <div class="flex gap-2 mt-0.5">
+              <input
+                type="text"
+                id="settingsVisionPath"
+                placeholder="~/vision"
+                class="flex-1 px-3 py-2 rounded-lg bg-dsm-panel2 border border-dsm-border text-dsm-text text-[12px] font-mono placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary transition-colors"
+              />
+              <button
+                id="settingsTestPath"
+                class="px-3 py-2 rounded-lg text-[11px] font-medium text-dsm-muted border border-dsm-border hover:text-dsm-text hover:border-dsm-muted transition-colors whitespace-nowrap"
+              >
+                Test Path
+              </button>
+            </div>
+            <div
+              id="settingsPathStatus"
+              class="hidden text-[11px] px-2.5 py-1.5 rounded-lg"
+            ></div>
+          </div>
+
+          <!-- Divider -->
+          <div class="border-t border-dsm-border2"></div>
+
+          <!-- WSL section -->
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-[12px] font-medium text-dsm-text">
+                  Use WSL (Windows Subsystem for Linux)
+                </p>
+                <p class="text-[11px] text-dsm-muted/70 mt-0.5">
+                  Enable when running this app on Windows and your repos are
+                  inside WSL.
+                </p>
+              </div>
+              <label
+                class="relative inline-flex items-center cursor-pointer ml-4 flex-shrink-0"
+              >
+                <input
+                  type="checkbox"
+                  id="settingsUseWsl"
+                  class="sr-only peer"
+                />
+                <div
+                  class="w-9 h-5 bg-dsm-panel2 border border-dsm-border rounded-full peer peer-checked:bg-dsm-primary/80 transition-colors"
+                ></div>
+                <div
+                  class="absolute left-0.5 top-0.5 w-4 h-4 bg-dsm-muted rounded-full transition-transform peer-checked:translate-x-4 peer-checked:bg-white"
+                ></div>
+              </label>
+            </div>
+
+            <!-- WSL distro (shown only when WSL enabled) -->
+            <div
+              id="settingsWslDistroRow"
+              class="hidden flex flex-col gap-1.5 pl-1"
+            >
+              <label
+                class="text-[11px] font-semibold text-dsm-muted uppercase tracking-wider"
+                >WSL Distro Name</label
+              >
+              <input
+                type="text"
+                id="settingsWslDistro"
+                placeholder="Ubuntu"
+                class="px-3 py-2 rounded-lg bg-dsm-panel2 border border-dsm-border text-dsm-text text-[12px] font-mono placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary transition-colors"
+              />
+              <p class="text-[11px] text-dsm-muted/60">
+                Run
+                <span class="font-mono bg-dsm-panel2 px-1 rounded"
+                  >wsl --list</span
+                >
+                in PowerShell to see available distros.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div
+          class="flex items-center gap-2 px-5 py-3.5 border-t border-dsm-border flex-shrink-0"
+        >
+          <button
+            id="settingsSave"
+            class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-medium bg-dsm-primary text-white hover:bg-dsm-primary-h transition-colors"
+          >
+            <i data-lucide="check" class="icon-xs"></i> Save
+          </button>
+          <button
+            id="settingsCancel"
+            class="px-4 py-1.5 rounded-lg text-[12px] font-medium text-dsm-muted border border-dsm-border hover:text-dsm-text hover:border-dsm-muted transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            id="settingsSeedGroups"
+            class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-medium bg-yellow-500/20 text-yellow-700 hover:bg-yellow-500/40 border border-yellow-500/40 transition-colors"
+            title="Restore favorite groups"
+          >
+            <i data-lucide="star" class="icon-xs"></i> Restore favorite groups
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error footer -->
+    <div
+      id="errorFooter"
+      class="hidden fixed bottom-0 left-0 right-0 z-[9990] flex items-center gap-2 px-4 py-2 bg-red-950/95 border-t border-red-500/40 text-red-300 text-[11px] font-mono backdrop-blur-sm"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class="flex-shrink-0 text-red-400"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="12" />
+        <line x1="12" y1="16" x2="12.01" y2="16" />
+      </svg>
+      <span id="errorFooterMsg" class="flex-1 truncate"></span>
+      <button
+        id="errorFooterClose"
+        class="flex-shrink-0 ml-2 px-2 py-0.5 rounded text-red-400 hover:text-red-200 hover:bg-red-500/20 transition-colors text-[11px]"
+        title="Dismiss"
+      >
+        ✕
+      </button>
+    </div>
+
+    <!-- Toast container -->
+    <div
+      id="toastContainer"
+      class="fixed bottom-8 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"
+      style="min-width: 280px; max-width: 380px"
+    ></div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
