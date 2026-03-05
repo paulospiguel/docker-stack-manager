@@ -56,9 +56,15 @@ enum ServiceType {
 
 export function classifyService(name: string): ServiceType {
   const svc = getServicePart(name).toLowerCase();
-  if (svc.includes("-app")) return ServiceType.Frontend;
+  if (isFrontendService(svc)) return ServiceType.Frontend;
   if (CORE_PATTERNS.some((p) => svc.includes(p))) return ServiceType.Core;
   return ServiceType.Backend;
+}
+
+/** Returns true if the service part (after stack prefix) looks like a frontend */
+export function isFrontendService(svcPart: string): boolean {
+  const s = svcPart.toLowerCase();
+  return s.includes("-app") || s.endsWith("_fe") || s === "fe" || s.endsWith("-fe");
 }
 
 /** Returns sorted unique stack names present in the given container list */
@@ -71,9 +77,10 @@ export function getAvailableStacks(containers: ContainerInfo[]): string[] {
   return [...names].sort();
 }
 
-/** FE badge if name contains "-app", BE otherwise */
+/** FE badge if service is frontend, BE otherwise */
 export function containerBadge(name: string): string {
-  const isFE = name.includes("-app");
+  const svc = getServicePart(name);
+  const isFE = isFrontendService(svc);
   return isFE
     ? `<span class="badge-fe" title="Frontend">FE</span>`
     : `<span class="badge-be" title="Backend">BE</span>`;

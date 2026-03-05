@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import os from "node:os";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 interface ContainerInfo {
   id: string;
@@ -121,6 +121,64 @@ ipcMain.handle(
     runScript([payload.action, ...payload.ids]),
 );
 
+// ── Raw containers (docker ps) ─────────────────────────────────────────────────
+
+function runContainerScript(args: string[]): Promise<{ ok: boolean; error?: string; containers?: unknown[] }> {
+  const basePath = app.isPackaged ? process.resourcesPath : path.resolve(__dirname, "..");
+  const scriptsPath = app.isPackaged
+    ? path.join(process.resourcesPath, "scripts")
+    : path.join(__dirname, "../scripts");
+  const pyScript = path.join(scriptsPath, "docker_containers.py");
+
+  if (!existsSync(pyScript)) {
+    return Promise.resolve({ ok: false, error: `docker_containers.py not found at ${scriptsPath}` });
+  }
+
+  return new Promise((resolve) => {
+    execFile("python3", [pyScript, ...args], { cwd: basePath }, (err, stdout, stderr) => {
+      try {
+        const parsed = JSON.parse(stdout || stderr);
+        resolve(parsed as { ok: boolean; error?: string; containers?: unknown[] });
+      } catch {
+        resolve({ ok: false, error: err?.message || "invalid response from docker_containers.py" });
+      }
+    });
+  });
+}
+
+ipcMain.handle("rawcontainers:list", async (_event, includeAll: boolean) =>
+  runContainerScript(includeAll ? ["list", "--all"] : ["list"]),
+);
+
+ipcMain.handle(
+  "rawcontainers:control",
+  async (_event, payload: { action: "start" | "stop" | "restart"; ids: string[] }) =>
+    runContainerScript([payload.action, ...payload.ids]),
+);
+
+ipcMain.handle("rawcontainers:logs", (_event, containerId: string) => {
+  const cmd = `docker logs -f --tail=200 '${containerId}'; echo; echo '── End of logs. Press Enter to close ──'; read`;
+  try {
+    const proc = spawn("gnome-terminal", ["--", "bash", "-c", cmd], { detached: true, stdio: "ignore" });
+    proc.unref();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+ipcMain.handle("rawcontainers:exec", (_event, containerId: string) => {
+  const cmd = `docker exec -it '${containerId}' sh -c 'command -v bash && exec bash || exec sh'; echo; echo '── Session ended. Press Enter to close ──'; read`;
+  try {
+    const proc = spawn("gnome-terminal", ["--", "bash", "-c", cmd], { detached: true, stdio: "ignore" });
+    proc.unref();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+
 // ── Build scripts ─────────────────────────────────────────────────────────────
 
 function resolvePath(rawPath: string): string {
@@ -237,6 +295,42 @@ ipcMain.handle("service:build", (_event, scriptPath: string) => {
   return { ok: true };
 });
 
+ipcMain.handle("service:fixShPermissions", (_event, dir: string) => {
+  try {
+    const resolved = resolvePath(dir);
+    const proc = spawn(
+      "gnome-terminal",
+      ["--", "bash", "-c", `cd '${resolved}' && chmod +x *.sh && echo 'Done! Permissions fixed.' && sleep 2`],
+      { detached: true, stdio: "ignore", cwd: resolved },
+    );
+    proc.unref();
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+});
+
+ipcMain.handle("acr:login", () => {
+  const acrName = process.env["ACR_NAME"] ?? "vortal";
+  const cmd = `az acr login --name '${acrName}' && echo '' && echo '── Login successful. Press Enter to close ──' && read || (echo '' && echo '── Login failed. Press Enter to close ──' && read)`;
+  try {
+    const proc = spawn("gnome-terminal", ["--", "bash", "-c", cmd], {
+      detached: true,
+      stdio: "ignore",
+    });
+    proc.unref();
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+});
+
 ipcMain.handle(
   "terminal:open",
   (
@@ -285,6 +379,23 @@ ipcMain.handle(
 );
 
 app.whenReady().then(() => {
+  // Load .env for ACR_NAME and other config
+  const envPath = app.isPackaged
+    ? path.join(process.resourcesPath, ".env")
+    : path.join(__dirname, "../.env");
+  if (existsSync(envPath)) {
+    const envContent = readFileSync(envPath, "utf-8");
+    for (const line of envContent.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eqIdx = trimmed.indexOf("=");
+      if (eqIdx < 0) continue;
+      const key = trimmed.slice(0, eqIdx).trim();
+      const val = trimmed.slice(eqIdx + 1).trim();
+      if (key && !(key in process.env)) process.env[key] = val;
+    }
+  }
+
   createWindow();
 
   app.on("activate", () => {

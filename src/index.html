@@ -33,6 +33,23 @@
           id="containerCount"
           class="ml-1 text-[11px] px-2 py-0.5 rounded-full bg-dsm-panel2 border border-dsm-border text-dsm-muted font-mono"
         ></span>
+        <!-- Tab Navigation -->
+        <div class="flex items-center gap-0.5 ml-3 pl-3 border-l border-dsm-border">
+          <button
+            id="tabServices"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-medium transition-all tab-active"
+            data-tab="services"
+          >
+            <i data-lucide="layers" class="icon-xs"></i> Services
+          </button>
+          <button
+            id="tabContainers"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-medium transition-all tab-inactive"
+            data-tab="containers"
+          >
+            <i data-lucide="container" class="icon-xs"></i> Containers
+          </button>
+        </div>
       </div>
       <!-- Status centered -->
       <div
@@ -57,6 +74,13 @@
           title="Open terminal in vision folder"
         >
           <i data-lucide="terminal"></i>
+        </button>
+        <button
+          id="acrLogin"
+          class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-semibold text-cyan-300 bg-cyan-500/15 border border-cyan-500/40 hover:text-cyan-200 hover:bg-cyan-500/25 hover:border-cyan-500/60 transition-colors"
+          title="az acr login (Azure Container Registry)"
+        >
+          <i data-lucide="layers" class="icon-xs"></i> ACR Login
         </button>
         <button
           id="openSettings"
@@ -89,8 +113,10 @@
       </div>
     </header>
 
-    <!-- Body: sidebar + main -->
+    <!-- Body: tab panels -->
     <div class="flex flex-1 overflow-hidden">
+      <!-- ══ SERVICES PANEL ══ -->
+      <div id="panelServices" class="flex flex-1 overflow-hidden">
       <!-- Sidebar -->
       <aside
         id="sidebar"
@@ -299,6 +325,83 @@
           </table>
         </div>
       </div>
+      <!-- ══ END SERVICES PANEL ══ -->
+      </div>
+
+      <!-- ══ CONTAINERS PANEL ══ -->
+      <div id="panelContainers" class="hidden flex flex-col flex-1 overflow-hidden bg-dsm-bg">
+        <!-- Containers Toolbar -->
+        <div class="flex items-center justify-between gap-2 px-3 py-2 bg-dsm-panel border-b border-dsm-border flex-shrink-0 flex-wrap">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <button
+              id="cRefresh"
+              class="icon-sm flex items-center gap-1 px-2.5 py-1.5 rounded text-[11px] font-medium text-dsm-muted hover:text-dsm-text bg-transparent hover:bg-white/5 border border-dsm-border hover:border-dsm-muted transition-all"
+              title="Refresh containers"
+            >
+              <i data-lucide="refresh-cw"></i>
+            </button>
+            <!-- Show all toggle -->
+            <label class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] text-dsm-muted border border-dsm-border hover:border-dsm-muted cursor-pointer transition-all select-none">
+              <input type="checkbox" id="cShowAll" class="accent-dsm-primary" />
+              Show stopped
+            </label>
+            <!-- Bulk actions -->
+            <div class="flex items-center gap-1 pl-1 border-l border-dsm-border">
+              <span id="cSelectedLabel" class="text-[10px] text-dsm-muted/50 uppercase tracking-wider pr-1 select-none">Selected</span>
+              <button id="cStartSelected" disabled
+                class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium text-green-400/70 bg-green-500/5 border border-green-500/15 hover:bg-green-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none">
+                <i data-lucide="play" class="icon-xs"></i> Start
+              </button>
+              <button id="cStopSelected" disabled
+                class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium text-red-400/70 bg-red-500/5 border border-red-500/15 hover:bg-red-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none">
+                <i data-lucide="square" class="icon-xs"></i> Stop
+              </button>
+              <button id="cRestartSelected" disabled
+                class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium text-yellow-400/70 bg-yellow-500/5 border border-yellow-500/15 hover:bg-yellow-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none">
+                <i data-lucide="rotate-ccw" class="icon-xs"></i> Restart
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="relative">
+              <i data-lucide="search" class="icon-xs absolute left-2 top-1/2 -translate-y-1/2 text-dsm-muted pointer-events-none"></i>
+              <input type="search" id="cFilterInput"
+                class="pl-7 pr-2 py-1.5 rounded text-[11px] bg-dsm-panel2 border border-dsm-border text-dsm-text placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary w-44 transition-colors"
+                placeholder="Filter..." />
+            </div>
+            <span id="cCount" class="text-[11px] px-2 py-0.5 rounded-full bg-dsm-panel2 border border-dsm-border text-dsm-muted font-mono"></span>
+          </div>
+        </div>
+        <!-- Containers Table -->
+        <div class="tbl-wrapper">
+          <table id="cTable">
+            <colgroup>
+              <col id="cc-check" style="width: 34px" />
+              <col id="cc-name" style="width: 220px" />
+              <col id="cc-id" style="width: 80px" />
+              <col id="cc-image" style="width: 240px" />
+              <col id="cc-status" style="width: 140px" />
+              <col id="cc-ports" style="width: 160px" />
+              <col id="cc-actions" style="width: 110px" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="!px-2 w-8 text-center">
+                  <input type="checkbox" id="cSelectAll" class="accent-dsm-primary" />
+                </th>
+                <th>Name</th>
+                <th>ID</th>
+                <th>Image</th>
+                <th>Status</th>
+                <th>Ports</th>
+                <th class="!text-right !pr-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="cBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- ══ END CONTAINERS PANEL ══ -->
     </div>
 
     <!-- Group modal -->
@@ -485,6 +588,14 @@
       >
         <i data-lucide="scroll-text" class="icon-xs text-purple-400"></i> View
         Logs
+      </button>
+      <div class="border-t border-dsm-border2 my-1"></div>
+      <button
+        id="ctxChmod"
+        class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-dsm-muted hover:text-dsm-text hover:bg-orange-500/10 hover:text-orange-300 transition-colors"
+        title="Fix .sh permissions (chmod +x *.sh)"
+      >
+        <i data-lucide="hammer" class="icon-xs text-orange-400"></i> Fix .sh Permissions
       </button>
     </div>
 

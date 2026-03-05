@@ -210,4 +210,33 @@
     opacity: 1;
     color: #58a6ff;
   }
+  /* ─ Tab navigation ─ */
+  .tab-active {
+    color: #c9d1d9;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .tab-inactive {
+    color: #7d8590;
+    background: transparent;
+    border: 1px solid transparent;
+  }
+  .tab-inactive:hover {
+    color: #c9d1d9;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  /* ─ Container state pill (raw containers) ─ */
+  .pill-paused {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium leading-none;
+    background: rgba(137, 87, 229, 0.15);
+    color: #d2a8ff;
+    border: 1px solid rgba(137, 87, 229, 0.3);
+  }
+  .pill-exited {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium leading-none;
+    background: rgba(110, 118, 129, 0.12);
+    color: #7d8590;
+    border: 1px solid rgba(110, 118, 129, 0.25);
+  }
 }

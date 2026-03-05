@@ -11,6 +11,17 @@ export interface ContainerInfo {
   uptime?: string;
 }
 
+export interface RawContainerInfo {
+  id: string;
+  name: string;
+  image: string;
+  status: string;
+  state: string;
+  ports: string;
+  running: boolean;
+  uptime: string;
+}
+
 export interface ApiResult {
   ok: boolean;
   error?: string;
@@ -46,6 +57,23 @@ export interface DockerApi {
   ) => Promise<{ ok: boolean; error?: string }>;
   openServiceLogs: (
     containerName: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  fixShPermissions: (
+    dir: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  acrLogin: () => Promise<{ ok: boolean; error?: string }>;
+  listRawContainers: (
+    includeAll: boolean,
+  ) => Promise<{ ok: boolean; error?: string; containers?: RawContainerInfo[] }>;
+  controlRawContainers: (
+    action: "start" | "stop" | "restart",
+    ids: string[],
+  ) => Promise<{ ok: boolean; error?: string; changed?: number }>;
+  openContainerLogs: (
+    containerId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  execContainer: (
+    containerId: string,
   ) => Promise<{ ok: boolean; error?: string }>;
 }
 

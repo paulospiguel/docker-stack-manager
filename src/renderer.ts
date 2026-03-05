@@ -27,7 +27,7 @@ import {
   ScrollText,
 } from "lucide";
 
-import type { Action, ContainerInfo, ContainerGroup, DockerApi } from "./types";
+import type { Action, ContainerInfo, ContainerGroup, DockerApi, RawContainerInfo } from "./types";
 import {
   escHtml,
   shortName,
@@ -102,8 +102,14 @@ const ctxTerminalBtn = document.getElementById(
 const ctxLogsBtn = document.getElementById(
   "ctxLogs",
 ) as HTMLButtonElement;
+const ctxChmodBtn = document.getElementById(
+  "ctxChmod",
+) as HTMLButtonElement;
 const openVisionTerminalBtn = document.getElementById(
   "openVisionTerminal",
+) as HTMLButtonElement;
+const acrLoginBtn = document.getElementById(
+  "acrLogin",
 ) as HTMLButtonElement;
 // Settings modal
 const settingsModalEl = document.getElementById(
@@ -695,8 +701,8 @@ function openCtxMenu(
     ctxBuildBtn.classList.add("hidden");
     ctxBuildDivider.classList.add("hidden");
   }
-  const menuW = 180;
-  const menuH = buildPath ? 156 : 112;
+  const menuW = 188;
+  const menuH = buildPath ? 176 : 132;
   ctxMenuEl.style.left = `${Math.min(x, window.innerWidth - menuW - 8)}px`;
   ctxMenuEl.style.top = `${Math.min(y, window.innerHeight - menuH - 8)}px`;
   ctxMenuEl.classList.remove("hidden");
@@ -734,6 +740,20 @@ ctxLogsBtn.addEventListener("click", () => {
     void api.openServiceLogs(ctxContainerName).then((r) => {
       if (!r.ok) showToast(`Error opening logs: ${r.error ?? ""}`, "error");
     });
+  }
+  closeCtxMenu();
+});
+
+ctxChmodBtn.addEventListener("click", () => {
+  if (ctxBuildPath && api) {
+    const dir = ctxBuildPath.replace(/\/[^/]+$/, "");
+    void api.fixShPermissions(dir).then((r) => {
+      if (r.ok)
+        showToast(`Permissions fixed (chmod +x *.sh) in ${dir}`, "success");
+      else showToast(`Error fixing permissions: ${r.error ?? ""}`, "error");
+    });
+  } else {
+    showToast("No build script found for this service.", "error");
   }
   closeCtxMenu();
 });
@@ -784,6 +804,16 @@ openVisionTerminalBtn.addEventListener("click", () => {
           showToast(`Error opening terminal: ${r.error ?? ""}`, "error");
         }
       });
+  }
+});
+
+acrLoginBtn.addEventListener("click", () => {
+  if (api) {
+    showToast("Running az acr login...", "success");
+    void api.acrLogin().then((r) => {
+      if (r.ok) showToast("ACR login successful!", "success");
+      else showToast(`ACR login failed: ${r.error ?? ""}`, "error");
+    });
   }
 });
 
@@ -1339,7 +1369,7 @@ document.addEventListener("click", (e) => {
   }
 });
 restoreFavGroupsBtn.addEventListener("click", () => {
-  localStorage.removeItem("dsm_seeded_v3");
+  localStorage.removeItem("dsm_seeded_v4");
   groups = seedPredefinedGroups(
     containers,
     groups.filter((g) => !g.predefined),
@@ -1370,7 +1400,7 @@ document.addEventListener("click", (e) => {
   }
 });
 sidebarRestoreGroupsBtn.addEventListener("click", () => {
-  localStorage.removeItem("dsm_seeded_v3");
+  localStorage.removeItem("dsm_seeded_v4");
   groups = seedPredefinedGroups(
     containers,
     groups.filter((g) => !g.predefined),
@@ -1381,3 +1411,237 @@ sidebarRestoreGroupsBtn.addEventListener("click", () => {
   showToast("Default groups restored.", "success");
   groupsMenu.classList.add("hidden");
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── CONTAINERS TAB ────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const panelServices = document.getElementById("panelServices") as HTMLDivElement;
+const panelContainers = document.getElementById("panelContainers") as HTMLDivElement;
+const tabServicesBtn = document.getElementById("tabServices") as HTMLButtonElement;
+const tabContainersBtn = document.getElementById("tabContainers") as HTMLButtonElement;
+const sidebarToggleBtn = document.getElementById("sidebarToggle") as HTMLButtonElement;
+
+const cBody = document.getElementById("cBody") as HTMLTableSectionElement;
+const cFilterInput = document.getElementById("cFilterInput") as HTMLInputElement;
+const cShowAll = document.getElementById("cShowAll") as HTMLInputElement;
+const cSelectAll = document.getElementById("cSelectAll") as HTMLInputElement;
+const cCount = document.getElementById("cCount") as HTMLSpanElement;
+const cSelectedLabel = document.getElementById("cSelectedLabel") as HTMLSpanElement;
+const cStartSelected = document.getElementById("cStartSelected") as HTMLButtonElement;
+const cStopSelected = document.getElementById("cStopSelected") as HTMLButtonElement;
+const cRestartSelected = document.getElementById("cRestartSelected") as HTMLButtonElement;
+const cRefreshBtn = document.getElementById("cRefresh") as HTMLButtonElement;
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let rawContainers: RawContainerInfo[] = [];
+let cFilterText = "";
+let cLoadingIds = new Set<string>();
+let activeTab: "services" | "containers" = "services";
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(tab: "services" | "containers"): void {
+  activeTab = tab;
+  if (tab === "services") {
+    panelServices.classList.remove("hidden");
+    panelContainers.classList.add("hidden");
+    tabServicesBtn.className = "flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-medium transition-all tab-active";
+    tabContainersBtn.className = "flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-medium transition-all tab-inactive";
+    sidebarToggleBtn.style.display = "";
+  } else {
+    panelServices.classList.add("hidden");
+    panelContainers.classList.remove("hidden");
+    tabServicesBtn.className = "flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-medium transition-all tab-inactive";
+    tabContainersBtn.className = "flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-medium transition-all tab-active";
+    sidebarToggleBtn.style.display = "none";
+    void refreshRawContainers();
+  }
+  renderLucide();
+}
+
+tabServicesBtn.addEventListener("click", () => switchTab("services"));
+tabContainersBtn.addEventListener("click", () => switchTab("containers"));
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function cGetSelected(): string[] {
+  return [...document.querySelectorAll<HTMLInputElement>(".c-check:checked")].map((el) => el.value);
+}
+
+function cUpdateSelectionButtons(): void {
+  const count = document.querySelectorAll<HTMLInputElement>(".c-check:checked").length;
+  const has = count > 0;
+  cStartSelected.disabled = !has;
+  cStopSelected.disabled = !has;
+  cRestartSelected.disabled = !has;
+  cSelectedLabel.textContent = has ? `${count} selected` : "Selected";
+}
+
+function cVisibleContainers(): RawContainerInfo[] {
+  let list = rawContainers;
+  if (cFilterText) {
+    const q = cFilterText.toLowerCase();
+    list = list.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.image.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q) ||
+        c.state.toLowerCase().includes(q),
+    );
+  }
+  return list;
+}
+
+function cStatePill(c: RawContainerInfo): string {
+  const isLoading = cLoadingIds.has(c.id);
+  if (isLoading) {
+    return `<span class="pill-loading"><span class="pill-spinner"></span> Working...</span>`;
+  }
+  const state = c.state.toLowerCase();
+  if (state === "running") {
+    return `<span class="pill-up"><span class="pill-dot"></span> ${escHtml(c.uptime || "running")}</span>`;
+  }
+  if (state === "paused") {
+    return `<span class="pill-paused"><span class="pill-dot"></span> Paused</span>`;
+  }
+  if (state === "exited" || state === "dead") {
+    return `<span class="pill-exited"><span class="pill-dot"></span> ${escHtml(c.status)}</span>`;
+  }
+  return `<span class="pill-down"><span class="pill-dot"></span> ${escHtml(c.state)}</span>`;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function cRenderTable(): void {
+  cBody.innerHTML = "";
+  const visible = cVisibleContainers();
+  const running = visible.filter((c) => c.running).length;
+  cCount.textContent = `${running} up / ${visible.length}`;
+
+  if (visible.length === 0) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td colspan="7">
+        <div class="flex flex-col items-center justify-center gap-2 py-16 text-dsm-muted">
+          <i data-lucide="container" style="width:40px;height:40px;opacity:0.15"></i>
+          <span class="text-[12px]">${cFilterText ? "No containers match filter." : cShowAll.checked ? "No containers found." : "No running containers. Enable 'Show stopped' to see all."}</span>
+        </div>
+      </td>`;
+    cBody.appendChild(tr);
+    renderLucide();
+    return;
+  }
+
+  for (const c of visible) {
+    const isLoading = cLoadingIds.has(c.id);
+    const tr = document.createElement("tr");
+    tr.dataset["cid"] = c.id;
+
+    const portsHtml = c.ports
+      ? `<span class="font-mono text-[10px] text-dsm-muted/70 truncate" title="${escHtml(c.ports)}">${escHtml(c.ports.split(",")[0])}${c.ports.includes(",") ? " …" : ""}</span>`
+      : `<span class="text-dsm-muted/30 text-[10px]">—</span>`;
+
+    tr.innerHTML = `
+      <td class="!px-2 text-center">
+        <input type="checkbox" class="c-check accent-dsm-primary" value="${escHtml(c.id)}" ${isLoading ? "disabled" : ""} />
+      </td>
+      <td>
+        <div class="flex items-center gap-1 min-w-0">
+          <span class="truncate font-mono text-[11px] text-dsm-text" title="${escHtml(c.name)}">${escHtml(c.name)}</span>
+        </div>
+      </td>
+      <td class="font-mono text-[10px] text-dsm-muted truncate">${escHtml(c.id)}</td>
+      <td class="font-mono text-[10px] text-dsm-muted truncate" title="${escHtml(c.image)}">${escHtml(c.image)}</td>
+      <td>${cStatePill(c)}</td>
+      <td>${portsHtml}</td>
+      <td class="!pr-2">
+        <div class="flex items-center gap-1 justify-end">
+          ${c.running
+            ? `<button class="flex items-center justify-center w-6 h-6 rounded transition-colors text-yellow-400/80 hover:text-yellow-400 hover:bg-yellow-400/10 border border-yellow-400/20" data-caction="restart" data-cid="${escHtml(c.id)}" title="Restart"><i data-lucide="rotate-ccw" class="icon-xs"></i></button>
+               <button class="flex items-center justify-center w-6 h-6 rounded border border-red-400/20 text-red-400/70 hover:text-red-400 hover:bg-red-400/10 transition-colors" data-caction="stop" data-cid="${escHtml(c.id)}" title="Stop"><i data-lucide="square" class="icon-xs"></i></button>`
+            : `<button class="flex items-center justify-center w-6 h-6 rounded transition-colors text-green-400/80 hover:text-green-400 hover:bg-green-400/10 border border-green-400/20" data-caction="start" data-cid="${escHtml(c.id)}" title="Start"><i data-lucide="play" class="icon-xs"></i></button>
+               <span class="w-6 h-6 flex-shrink-0 inline-block"></span>`}
+          <button class="flex items-center justify-center w-6 h-6 rounded border border-purple-400/20 text-purple-400/70 hover:text-purple-400 hover:bg-purple-400/10 transition-colors" data-caction="logs" data-cid="${escHtml(c.id)}" title="View Logs"><i data-lucide="scroll-text" class="icon-xs"></i></button>
+          ${c.running
+            ? `<button class="flex items-center justify-center w-6 h-6 rounded border border-blue-400/20 text-blue-400/70 hover:text-blue-400 hover:bg-blue-400/10 transition-colors" data-caction="exec" data-cid="${escHtml(c.id)}" title="Open Shell"><i data-lucide="terminal" class="icon-xs"></i></button>`
+            : `<span class="w-6 h-6 flex-shrink-0 inline-block"></span>`}
+        </div>
+      </td>
+    `;
+    cBody.appendChild(tr);
+  }
+
+  // Wire action buttons
+  for (const btn of cBody.querySelectorAll<HTMLButtonElement>("button[data-caction]")) {
+    btn.addEventListener("click", () => {
+      const { caction, cid } = btn.dataset as { caction: string; cid: string };
+      if (caction === "logs") {
+        if (api) void api.openContainerLogs(cid).then((r) => { if (!r.ok) showToast(`Logs error: ${r.error ?? ""}`, "error"); });
+      } else if (caction === "exec") {
+        if (api) void api.execContainer(cid).then((r) => { if (!r.ok) showToast(`Shell error: ${r.error ?? ""}`, "error"); });
+      } else {
+        void cRunAction(caction as "start" | "stop" | "restart", [cid]);
+      }
+    });
+  }
+
+  renderLucide();
+  cUpdateSelectionButtons();
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+async function cRunAction(action: "start" | "stop" | "restart", ids: string[]): Promise<void> {
+  if (!ids.length || !api) return;
+  ids.forEach((id) => cLoadingIds.add(id));
+  cRenderTable();
+  const result = await api.controlRawContainers(action, ids);
+  ids.forEach((id) => cLoadingIds.delete(id));
+  if (!result.ok) {
+    showToast(`Error: ${result.error ?? "unknown"}`, "error");
+  } else {
+    showToast(`${action.charAt(0).toUpperCase() + action.slice(1)} done on ${result.changed ?? ids.length} container(s).`, "success");
+  }
+  await refreshRawContainers();
+}
+
+async function refreshRawContainers(): Promise<void> {
+  if (!api) return;
+  const result = await api.listRawContainers(cShowAll.checked);
+  if (!result.ok) {
+    showToast(`Containers error: ${result.error ?? "unknown"}`, "error");
+    return;
+  }
+  rawContainers = (result.containers ?? []) as RawContainerInfo[];
+  cRenderTable();
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+cRefreshBtn.addEventListener("click", () => void refreshRawContainers());
+cShowAll.addEventListener("change", () => void refreshRawContainers());
+
+cFilterInput.addEventListener("input", () => {
+  cFilterText = cFilterInput.value.trim();
+  cRenderTable();
+});
+
+cSelectAll.addEventListener("change", () => {
+  const checked = cSelectAll.checked;
+  for (const cb of document.querySelectorAll<HTMLInputElement>(".c-check")) {
+    cb.checked = checked;
+  }
+  cUpdateSelectionButtons();
+});
+
+cBody.addEventListener("change", (e) => {
+  if ((e.target as HTMLElement).classList.contains("c-check")) {
+    cUpdateSelectionButtons();
+    const total = document.querySelectorAll(".c-check").length;
+    const checked = document.querySelectorAll(".c-check:checked").length;
+    cSelectAll.indeterminate = checked > 0 && checked < total;
+    cSelectAll.checked = checked === total && total > 0;
+  }
+});
+
+cStartSelected.addEventListener("click", () => void cRunAction("start", cGetSelected()));
+cStopSelected.addEventListener("click", () => void cRunAction("stop", cGetSelected()));
+cRestartSelected.addEventListener("click", () => void cRunAction("restart", cGetSelected()));
+

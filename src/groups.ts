@@ -1,10 +1,11 @@
 // ── Group persistence & seeding ───────────────────────────────────────────────
 
 import type { ContainerGroup, ContainerInfo } from "./types";
-import { shortName, classifyService } from "./utils";
+import { shortName, classifyService, isFrontendService, getServicePart } from "./utils";
 
 export const STORAGE_KEY = "dsm_groups_v1";
-export const PREDEFINED_SEED_KEY = "dsm_seeded_v3";
+// Bumped to v4 to force re-seed with the new "Dev Frontend" group
+export const PREDEFINED_SEED_KEY = "dsm_seeded_v4";
 
 export function loadGroups(): ContainerGroup[] {
   try {
@@ -28,19 +29,37 @@ export function saveGroups(groups: ContainerGroup[]): void {
 }
 
 /**
- * Creates the pre-defined groups (Core, Backend, Frontend) the first time
+ * Creates the pre-defined groups (Core, Backend, Frontend, Dev Frontend) the first time
  * containers are loaded and no seed has been done yet.
+ * "Dev Frontend" is always kept in sync with *_fe services dynamically.
  * Returns the updated groups array (or the same array if already seeded).
  */
 export function seedPredefinedGroups(
   containerList: ContainerInfo[],
   groups: ContainerGroup[],
 ): ContainerGroup[] {
-  if (localStorage.getItem(PREDEFINED_SEED_KEY)) return groups;
+  if (localStorage.getItem(PREDEFINED_SEED_KEY)) {
+    // Even when already seeded, dynamically update the Dev Frontend group ids
+    // so newly added *_fe services are always included automatically.
+    const devFeGroup = groups.find((g) => g.id === "predefined_dev_frontend");
+    if (devFeGroup) {
+      devFeGroup.ids = containerList
+        .filter((c) => isFrontendService(getServicePart(c.name)))
+        .map((c) => shortName(c.name));
+      saveGroups(groups);
+    }
+    return groups;
+  }
 
   const frontendIds = containerList
     .filter((c) => classifyService(c.name) === "frontend")
     .map((c) => shortName(c.name));
+
+  // Dev Frontend: services with _fe suffix (or -app, same as frontend classifier)
+  const devFeIds = containerList
+    .filter((c) => isFrontendService(getServicePart(c.name)))
+    .map((c) => shortName(c.name));
+
   const coreIds = containerList
     .filter((c) => classifyService(c.name) === "core")
     .map((c) => shortName(c.name));
@@ -68,6 +87,13 @@ export function seedPredefinedGroups(
       name: "Frontend",
       color: "#1f6feb",
       ids: frontendIds,
+      predefined: true,
+    },
+    {
+      id: "predefined_dev_frontend",
+      name: "Dev Frontend",
+      color: "#8957e5",
+      ids: devFeIds,
       predefined: true,
     },
   ];
