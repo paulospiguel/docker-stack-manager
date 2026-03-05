@@ -37,13 +37,13 @@ if [[ "$cmd" == "start" || "$cmd" == "stop" ]]; then
   if [[ "$cmd" == "stop" ]]; then
     scale_args=()
     for name in "$@"; do scale_args+=("${name}=0"); done
-    docker service scale "${scale_args[@]}" >/dev/null
+    docker service scale --detach "${scale_args[@]}" >/dev/null
   else
     scale_args=()
     for name in "$@"; do scale_args+=("${name}=1"); done
-    docker service scale "${scale_args[@]}" >/dev/null
+    docker service scale --detach "${scale_args[@]}" >/dev/null
     for name in "$@"; do
-      docker service update --force "$name" >/dev/null
+      docker service update --force --detach --with-registry-auth "$name" >/dev/null
     done
   fi
   echo "{\"ok\":true,\"changed\":$#}"

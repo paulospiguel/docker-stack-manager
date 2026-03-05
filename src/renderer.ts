@@ -520,17 +520,35 @@ function renderTable(): void {
     const svcKey = escHtml(shortName(c.name));
     const badge = containerBadge(c.name);
 
-    const isLoading = loadingContainers.has(c.name);
-    const pillClass = isLoading
-      ? "pill-loading"
-      : c.running
-        ? "pill-up"
-        : "pill-down";
-    const pillLabel = isLoading
-      ? "Loading..."
-      : escHtml(c.running ? c.status : "Stopped");
+    const isManualLoading = loadingContainers.has(c.name);
+    let runningReplicas = 0;
+    let desiredReplicas = 0;
+    let isTransitioning = false;
+    if (c.status && c.status.includes("/")) {
+      const parts = c.status.split("/");
+      runningReplicas = parseInt(parts[0], 10) || 0;
+      desiredReplicas = parseInt(parts[1], 10) || 0;
+      if (runningReplicas !== desiredReplicas) isTransitioning = true;
+    }
+
+    const showLoading = isManualLoading || isTransitioning;
+    let pillClass = "pill-down";
+    let pillLabel = "Stopped";
+
+    if (showLoading) {
+      pillClass = "pill-loading";
+      if (isManualLoading && !isTransitioning) {
+        pillLabel = "Working...";
+      } else {
+        pillLabel = desiredReplicas > 0 ? `Starting (${c.status})` : `Stopping (${c.status})`;
+      }
+    } else if (c.running) {
+      pillClass = "pill-up";
+      pillLabel = escHtml(c.status);
+    }
+
     const uptimeHtml =
-      c.running && c.uptime && !isLoading
+      c.running && c.uptime && !showLoading
         ? `<span class="text-[9px] font-mono text-dsm-muted/60 leading-none pl-0.5 mt-0.5">${escHtml(c.uptime)}</span>`
         : "";
 
@@ -561,7 +579,7 @@ function renderTable(): void {
       <td class="font-mono text-[10px] text-dsm-muted truncate" title="${escHtml(c.image)}">${escHtml(c.image)}</td>
       <td>
         <div class="flex flex-col items-start gap-0.5">
-          <span class="${pillClass}">${isLoading ? '<span class="pill-spinner"></span>' : '<span class="pill-dot"></span>'} ${pillLabel}</span>
+          <span class="${pillClass}">${showLoading ? '<span class="pill-spinner"></span>' : '<span class="pill-dot"></span>'} ${pillLabel}</span>
           ${uptimeHtml}
         </div>
       </td>

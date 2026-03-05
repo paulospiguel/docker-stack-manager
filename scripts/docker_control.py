@@ -92,13 +92,13 @@ def control(action, names):
         return {'changed': 0}
     if action == 'stop':
         scale_args = [f'{n}=0' for n in names]
-        run(['docker', 'service', 'scale', *scale_args])
+        run(['docker', 'service', 'scale', '--detach', *scale_args])
     else:
         # Scale to 1 first, then force-update to re-deploy any stuck tasks
         scale_args = [f'{n}=1' for n in names]
-        run(['docker', 'service', 'scale', *scale_args])
+        run(['docker', 'service', 'scale', '--detach', *scale_args])
         for n in names:
-            run(['docker', 'service', 'update', '--force', n])
+            run(['docker', 'service', 'update', '--force', '--detach', '--with-registry-auth', n])
     return {'changed': len(names)}
 
 
