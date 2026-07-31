@@ -156,28 +156,71 @@ ipcMain.handle(
     runContainerScript([payload.action, ...payload.ids]),
 );
 
+// ── Terminal launcher helper for Linux/Cross-platform ─────────────────────────
+
+function spawnLinuxTerminal(bashCommand: string, workingDir?: string): boolean {
+  const terminals = [
+    { bin: "gnome-terminal", args: ["--", "bash", "-c", bashCommand] },
+    { bin: "konsole", args: ["-e", "bash", "-c", bashCommand] },
+    { bin: "xfce4-terminal", args: ["-e", `bash -c "${bashCommand.replace(/"/g, '\\"')}"`] },
+    { bin: "alacritty", args: ["-e", "bash", "-c", bashCommand] },
+    { bin: "kitty", args: ["bash", "-c", bashCommand] },
+    { bin: "xterm", args: ["-e", "bash", "-c", bashCommand] },
+  ];
+
+  for (const t of terminals) {
+    try {
+      const proc = spawn(t.bin, t.args, {
+        detached: true,
+        stdio: "ignore",
+        cwd: workingDir,
+      });
+      proc.unref();
+      return true;
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
+
+function spawnLinuxDirTerminal(targetDir: string): boolean {
+  const dirTerminals = [
+    { bin: "gnome-terminal", args: ["--working-directory", targetDir] },
+    { bin: "konsole", args: ["--workdir", targetDir] },
+    { bin: "xfce4-terminal", args: ["--working-directory", targetDir] },
+    { bin: "alacritty", args: ["--working-directory", targetDir] },
+    { bin: "kitty", args: ["--directory", targetDir] },
+    { bin: "xterm", args: [] },
+  ];
+
+  for (const t of dirTerminals) {
+    try {
+      const proc = spawn(t.bin, t.args, {
+        detached: true,
+        stdio: "ignore",
+        cwd: targetDir,
+      });
+      proc.unref();
+      return true;
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
+
 ipcMain.handle("rawcontainers:logs", (_event, containerId: string) => {
   const cmd = `docker logs -f --tail=200 '${containerId}'; echo; echo '── End of logs. Press Enter to close ──'; read`;
-  try {
-    const proc = spawn("gnome-terminal", ["--", "bash", "-c", cmd], { detached: true, stdio: "ignore" });
-    proc.unref();
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
+  const ok = spawnLinuxTerminal(cmd);
+  return ok ? { ok: true } : { ok: false, error: "Failed to open terminal (gnome-terminal/konsole/xfce4-terminal not found)" };
 });
 
 ipcMain.handle("rawcontainers:exec", (_event, containerId: string) => {
   const cmd = `docker exec -it '${containerId}' sh -c 'command -v bash && exec bash || exec sh'; echo; echo '── Session ended. Press Enter to close ──'; read`;
-  try {
-    const proc = spawn("gnome-terminal", ["--", "bash", "-c", cmd], { detached: true, stdio: "ignore" });
-    proc.unref();
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
+  const ok = spawnLinuxTerminal(cmd);
+  return ok ? { ok: true } : { ok: false, error: "Failed to open terminal (gnome-terminal/konsole/xfce4-terminal not found)" };
 });
-
 
 // ── Build scripts ─────────────────────────────────────────────────────────────
 
@@ -268,43 +311,23 @@ ipcMain.handle(
 
 ipcMain.handle("service:logs", (_event, serviceName: string) => {
   const cmd = `docker service logs -f --tail=200 '${serviceName}'; echo; echo '── End of logs. Press Enter to close ──'; read`;
-  try {
-    const proc = spawn("gnome-terminal", ["--", "bash", "-c", cmd], {
-      detached: true,
-      stdio: "ignore",
-    });
-    proc.unref();
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  const ok = spawnLinuxTerminal(cmd);
+  return ok ? { ok: true } : { ok: false, error: "Failed to open terminal" };
 });
 
 ipcMain.handle("service:build", (_event, scriptPath: string) => {
   const cwd = path.dirname(scriptPath);
   const cmd = `cd '${cwd}' && bash '${scriptPath}'; echo; echo '── Done. Press Enter to close ──'; read`;
-  const proc = spawn("gnome-terminal", ["--", "bash", "-c", cmd], {
-    detached: true,
-    stdio: "ignore",
-    cwd,
-  });
-  proc.unref();
-  return { ok: true };
+  const ok = spawnLinuxTerminal(cmd, cwd);
+  return ok ? { ok: true } : { ok: false, error: "Failed to open terminal" };
 });
 
 ipcMain.handle("service:fixShPermissions", (_event, dir: string) => {
   try {
     const resolved = resolvePath(dir);
-    const proc = spawn(
-      "gnome-terminal",
-      ["--", "bash", "-c", `cd '${resolved}' && chmod +x *.sh && echo 'Done! Permissions fixed.' && sleep 2`],
-      { detached: true, stdio: "ignore", cwd: resolved },
-    );
-    proc.unref();
-    return { ok: true };
+    const cmd = `cd '${resolved}' && chmod +x *.sh && echo 'Done! Permissions fixed.' && sleep 2`;
+    const ok = spawnLinuxTerminal(cmd, resolved);
+    return ok ? { ok: true } : { ok: false, error: "Failed to open terminal" };
   } catch (error) {
     return {
       ok: false,
@@ -316,19 +339,8 @@ ipcMain.handle("service:fixShPermissions", (_event, dir: string) => {
 ipcMain.handle("acr:login", () => {
   const acrName = process.env["ACR_NAME"] ?? "vortal";
   const cmd = `az acr login --name '${acrName}' && echo '' && echo '── Login successful. Press Enter to close ──' && read || (echo '' && echo '── Login failed. Press Enter to close ──' && read)`;
-  try {
-    const proc = spawn("gnome-terminal", ["--", "bash", "-c", cmd], {
-      detached: true,
-      stdio: "ignore",
-    });
-    proc.unref();
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  const ok = spawnLinuxTerminal(cmd);
+  return ok ? { ok: true } : { ok: false, error: "Failed to open terminal" };
 });
 
 ipcMain.handle(
@@ -345,7 +357,6 @@ ipcMain.handle(
       if (useWsl) {
         // Convert Linux path to WSL UNC path: /home/user/x → \\wsl.localhost\Ubuntu\home\user\x
         const uncPath = `\\\\wsl.localhost\\${wslDistro}${expanded.replace(/\//g, "\\")}`;
-        // Try Windows Terminal first, fallback to plain wsl.exe
         try {
           const proc = spawn("wt.exe", ["-p", wslDistro, "-d", uncPath], {
             detached: true,
@@ -363,12 +374,8 @@ ipcMain.handle(
         return { ok: true };
       }
 
-      const proc = spawn("gnome-terminal", ["--working-directory", expanded], {
-        detached: true,
-        stdio: "ignore",
-      });
-      proc.unref();
-      return { ok: true };
+      const ok = spawnLinuxDirTerminal(expanded);
+      return ok ? { ok: true } : { ok: false, error: "Failed to open terminal" };
     } catch (error) {
       return {
         ok: false,

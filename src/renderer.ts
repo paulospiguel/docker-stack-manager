@@ -25,6 +25,9 @@ import {
   Settings,
   MoreVertical,
   ScrollText,
+  Monitor,
+  Server,
+  HelpCircle,
 } from "lucide";
 
 import type { Action, ContainerInfo, ContainerGroup, DockerApi, RawContainerInfo } from "./types";
@@ -53,6 +56,8 @@ const countdownEl = document.getElementById(
   "refreshCountdown",
 ) as HTMLSpanElement;
 const filterInput = document.getElementById("filterInput") as HTMLInputElement;
+const filterClearBtn = document.getElementById("filterClearBtn") as HTMLButtonElement;
+const statusFilterSelectorEl = document.getElementById("statusFilterSelector") as HTMLSelectElement;
 const sidebarEl = document.getElementById("sidebar") as HTMLElement;
 const sidebarList = document.getElementById("sidebarList") as HTMLDivElement;
 const groupModal = document.getElementById("groupModal") as HTMLDivElement;
@@ -136,6 +141,9 @@ const startSelectedBtn = document.getElementById(
 const stopSelectedBtn = document.getElementById(
   "stopSelected",
 ) as HTMLButtonElement;
+const restartSelectedBtn = document.getElementById(
+  "restartSelected",
+) as HTMLButtonElement;
 const errorFooterEl = document.getElementById("errorFooter") as HTMLDivElement;
 const errorFooterMsgEl = document.getElementById(
   "errorFooterMsg",
@@ -177,6 +185,8 @@ let containers: ContainerInfo[] = [];
 let groups: ContainerGroup[] = loadGroups();
 let activeGroupId = "all";
 let filterText = "";
+let statusFilter: "all" | "running" | "stopped" = "all";
+let isInitialLoading = true;
 let stackFilter = localStorage.getItem(STACK_KEY) ?? "";
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
@@ -257,7 +267,40 @@ function renderLucide(): void {
       Settings,
       MoreVertical,
       ScrollText,
+      Monitor,
+      Server,
+      HelpCircle,
     },
+  });
+}
+
+/** Custom confirm modal returning Promise<boolean> */
+function showConfirmModal(title: string, message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const confirmModal = document.getElementById("confirmModal") as HTMLDivElement;
+    const titleEl = document.getElementById("confirmModalTitle") as HTMLHeadingElement;
+    const msgEl = document.getElementById("confirmModalMessage") as HTMLDivElement;
+    const okBtn = document.getElementById("confirmModalOk") as HTMLButtonElement;
+    const cancelBtn = document.getElementById("confirmModalCancel") as HTMLButtonElement;
+    const closeBtn = document.getElementById("confirmModalClose") as HTMLButtonElement;
+
+    titleEl.textContent = title;
+    msgEl.textContent = message;
+    confirmModal.classList.remove("hidden");
+
+    const cleanup = () => {
+      confirmModal.classList.add("hidden");
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+      closeBtn.removeEventListener("click", onCancel);
+    };
+
+    const onOk = () => { cleanup(); resolve(true); };
+    const onCancel = () => { cleanup(); resolve(false); };
+
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    closeBtn.addEventListener("click", onCancel);
   });
 }
 
@@ -334,6 +377,7 @@ function updateSelectionButtons(): void {
   const hasSelection = count > 0;
   startSelectedBtn.disabled = !hasSelection;
   stopSelectedBtn.disabled = !hasSelection;
+  if (restartSelectedBtn) restartSelectedBtn.disabled = !hasSelection;
   const label = document.getElementById("selectedLabel");
   if (label)
     label.textContent = hasSelection ? `${count} selected` : "Selected";
@@ -349,6 +393,11 @@ function visibleContainers(): ContainerInfo[] {
   }
   if (stackFilter) {
     list = list.filter((c) => getStackName(c.name) === stackFilter);
+  }
+  if (statusFilter === "running") {
+    list = list.filter((c) => c.running);
+  } else if (statusFilter === "stopped") {
+    list = list.filter((c) => !c.running);
   }
   if (filterText) {
     const q = filterText.toLowerCase();
@@ -382,6 +431,20 @@ function visibleContainers(): ContainerInfo[] {
   }
 
   return list;
+}
+
+function renderSkeletonRows(): void {
+  body.innerHTML = Array.from({ length: 6 }).map(() => `
+    <tr>
+      <td class="!px-2 text-center"><div class="skeleton-box w-4 h-4"></div></td>
+      <td class="!px-1 text-center"><div class="skeleton-box w-4 h-4"></div></td>
+      <td><div class="flex items-center gap-2"><div class="skeleton-box w-32"></div><div class="skeleton-box w-8"></div></div></td>
+      <td><div class="skeleton-box w-16"></div></td>
+      <td><div class="skeleton-box w-40"></div></td>
+      <td><div class="skeleton-box w-24"></div></td>
+      <td class="!pr-2 text-right"><div class="skeleton-box w-12 ml-auto"></div></td>
+    </tr>
+  `).join("");
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -975,6 +1038,9 @@ async function refreshContainers(): Promise<void> {
   const serial = ++refreshSerial;
   resetCountdown();
   setStatus("Loading...");
+  if (isInitialLoading) {
+    renderSkeletonRows();
+  }
   if (!api) {
     setStatus("Electron API unavailable (preload).", "error");
     return;
@@ -987,6 +1053,7 @@ async function refreshContainers(): Promise<void> {
     return;
   }
   containers = result.containers ?? [];
+  isInitialLoading = false;
   groups = seedPredefinedGroups(containers, groups);
   renderStackSelector();
   renderTable();
@@ -1225,14 +1292,19 @@ if (modalSearchEl) {
 }
 
 // ── Toolbar bindings ──────────────────────────────────────────────────────────
+// ── Toolbar bindings ──────────────────────────────────────────────────────────
 (document.getElementById("refresh") as HTMLButtonElement).addEventListener(
   "click",
   () => void refreshContainers(),
 );
 (document.getElementById("startAll") as HTMLButtonElement).addEventListener(
   "click",
-  () => {
-    if (confirm("Are you sure you want to START ALL visible services?")) {
+  async () => {
+    const confirmed = await showConfirmModal(
+      "Start All Services",
+      "Are you sure you want to START ALL visible services?",
+    );
+    if (confirmed) {
       void runAction(
         "start",
         visibleContainers().map((c) => c.id),
@@ -1242,8 +1314,12 @@ if (modalSearchEl) {
 );
 (document.getElementById("stopAll") as HTMLButtonElement).addEventListener(
   "click",
-  () => {
-    if (confirm("Are you sure you want to STOP ALL visible services?")) {
+  async () => {
+    const confirmed = await showConfirmModal(
+      "Stop All Services",
+      "Are you sure you want to STOP ALL visible services?",
+    );
+    if (confirmed) {
       void runAction(
         "stop",
         visibleContainers().map((c) => c.id),
@@ -1258,6 +1334,12 @@ if (modalSearchEl) {
   "click",
   () => void runAction("stop", getSelectedIds()),
 );
+if (restartSelectedBtn) {
+  restartSelectedBtn.addEventListener(
+    "click",
+    () => void runAction("restart", getSelectedIds()),
+  );
+}
 (document.getElementById("saveGroupBtn") as HTMLButtonElement).addEventListener(
   "click",
   // normalize full container names to short service names for group membership
@@ -1298,8 +1380,65 @@ body.addEventListener("change", (e) => {
 
 filterInput.addEventListener("input", () => {
   filterText = filterInput.value.trim();
+  if (filterClearBtn) {
+    filterClearBtn.classList.toggle("hidden", filterText === "");
+  }
   renderTable();
   updateCount();
+});
+
+if (filterClearBtn) {
+  filterClearBtn.addEventListener("click", () => {
+    filterInput.value = "";
+    filterText = "";
+    filterClearBtn.classList.add("hidden");
+    renderTable();
+    updateCount();
+  });
+}
+
+if (statusFilterSelectorEl) {
+  statusFilterSelectorEl.addEventListener("change", () => {
+    statusFilter = statusFilterSelectorEl.value as "all" | "running" | "stopped";
+    renderTable();
+    updateCount();
+  });
+}
+
+// Global Keyboard Shortcuts
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+    e.preventDefault();
+    if (activeTab === "services") {
+      filterInput.focus();
+      filterInput.select();
+    } else {
+      cFilterInput.focus();
+      cFilterInput.select();
+    }
+  } else if (e.key === "/" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+    e.preventDefault();
+    if (activeTab === "services") {
+      filterInput.focus();
+      filterInput.select();
+    } else {
+      cFilterInput.focus();
+      cFilterInput.select();
+    }
+  } else if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r")) {
+    e.preventDefault();
+    void refreshContainers();
+    if (activeTab === "containers") void refreshRawContainers();
+  }
+});
+
+// Background Idle Pause
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopAutoRefresh();
+  } else {
+    startAutoRefresh(parseInt(intervalSel.value, 10));
+  }
 });
 
 intervalSel.addEventListener("change", () => {

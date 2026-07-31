@@ -1,3 +1,18 @@
+:root {
+  --bg-app: #0b0d13;
+  --bg-panel: #131722;
+  --bg-panel-subtle: #191f2d;
+  --border-color: #272e3f;
+  --border-color-subtle: #1e2433;
+  --text-main: #d1d5db;
+  --text-muted: #808a9d;
+  --accent-blue: #388bfd;
+  --accent-purple: #8957e5;
+  --color-success: #3fb950;
+  --color-warning: #d29922;
+  --color-danger: #f85149;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -14,10 +29,10 @@
   body {
     height: 100%;
     overflow: hidden;
-    background: #0f1117;
-    color: #c9d1d9;
+    background: var(--bg-app);
+    color: var(--text-main);
     font-family:
-      -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
       sans-serif;
     font-size: 13px;
     line-height: 1.5;
@@ -32,11 +47,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #30363d;
+    background: #272e3f;
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #484f58;
+    background: #3b455c;
   }
 
   input,
@@ -54,7 +69,7 @@
   /* ─ Resize handle ─ */
   .resize-handle {
     @apply absolute right-0 top-0 h-full w-[3px] cursor-col-resize opacity-0 hover:opacity-100 transition-opacity z-10;
-    background: #388bfd;
+    background: var(--accent-blue);
   }
   .resize-handle.dragging {
     @apply opacity-100;
@@ -65,57 +80,65 @@
 
   /* ─ Status pills ─ */
   .pill-up {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium leading-none;
-    background: rgba(35, 134, 54, 0.15);
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium leading-none shadow-sm;
+    background: rgba(63, 185, 80, 0.12);
     color: #3fb950;
-    border: 1px solid rgba(35, 134, 54, 0.3);
+    border: 1px solid rgba(63, 185, 80, 0.3);
   }
   .pill-down {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium leading-none;
-    background: rgba(218, 54, 51, 0.12);
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium leading-none shadow-sm;
+    background: rgba(248, 81, 73, 0.12);
     color: #f85149;
-    border: 1px solid rgba(218, 54, 51, 0.25);
+    border: 1px solid rgba(248, 81, 73, 0.25);
   }
   .pill-loading {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium leading-none;
-    background: rgba(210, 153, 34, 0.15);
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium leading-none shadow-sm;
+    background: rgba(212, 153, 34, 0.15);
     color: #e3b341;
-    border: 1px solid rgba(210, 153, 34, 0.3);
+    border: 1px solid rgba(212, 153, 34, 0.35);
+    animation: pulse-border 2s infinite ease-in-out;
   }
   .pill-dot {
     @apply w-1.5 h-1.5 rounded-full bg-current flex-shrink-0;
   }
+  .pill-dot-pulse {
+    @apply w-1.5 h-1.5 rounded-full bg-current flex-shrink-0;
+    animation: pulse-dot 1.5s infinite ease-in-out;
+  }
   .pill-spinner {
-    @apply w-1.5 h-1.5 rounded-full flex-shrink-0 bg-current;
-    animation: spin 1s linear infinite;
-    opacity: 0.7;
+    @apply w-2 h-2 rounded-full flex-shrink-0 border-2 border-current border-t-transparent;
+    animation: spin 0.8s linear infinite;
   }
   @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes pulse-border {
+    0%, 100% { border-color: rgba(212, 153, 34, 0.35); }
+    50% { border-color: rgba(212, 153, 34, 0.7); }
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
   }
 
   /* ─ FE / BE badges ─ */
   .badge-fe {
-    @apply inline-flex items-center px-1 rounded text-[9px] font-bold leading-4 align-middle;
-    background: rgba(31, 111, 235, 0.2);
+    @apply inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold leading-3 align-middle tracking-wider uppercase shadow-sm;
+    background: rgba(56, 139, 253, 0.18);
     color: #79c0ff;
-    border: 1px solid rgba(31, 111, 235, 0.35);
+    border: 1px solid rgba(56, 139, 253, 0.35);
   }
   .badge-be {
-    @apply inline-flex items-center px-1 rounded text-[9px] font-bold leading-4 align-middle;
-    background: rgba(210, 153, 34, 0.18);
+    @apply inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold leading-3 align-middle tracking-wider uppercase shadow-sm;
+    background: rgba(212, 153, 34, 0.18);
     color: #e3b341;
-    border: 1px solid rgba(210, 153, 34, 0.3);
+    border: 1px solid rgba(212, 153, 34, 0.3);
   }
 
   /* ─ Group tag chips ─ */
   .group-tag {
-    @apply inline-block text-[10px] px-1.5 py-0 rounded leading-4;
+    @apply inline-block text-[10px] px-1.5 py-0 rounded leading-4 shadow-sm transition-transform hover:scale-105;
   }
 
   /* ─ Color swatches ─ */
@@ -127,9 +150,7 @@
     ring-offset-color: #161b22;
   }
 
-  /* ─ Lucide icon size helpers ─
-     createIcons() replaces <i data-lucide> with <svg data-lucide>,
-     copying classes onto the svg. Target svg[data-lucide] directly. ─ */
+  /* ─ Lucide icon size helpers ─ */
   svg[data-lucide] {
     display: block;
     flex-shrink: 0;
@@ -167,20 +188,21 @@
   }
   .tbl-wrapper thead {
     @apply sticky top-0 z-10;
-    background: #161b22;
+    background: #141824;
+    box-shadow: 0 1px 0 rgba(39, 46, 63, 0.8);
   }
   .tbl-wrapper tbody tr {
-    @apply border-b border-dsm-border2;
-    transition: background 0.1s;
+    @apply border-b border-[#1c2233];
+    transition: background-color 0.12s ease-out;
   }
   .tbl-wrapper tbody tr:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(255, 255, 255, 0.035);
   }
   .tbl-wrapper th {
-    @apply text-[11px] font-semibold uppercase tracking-wider text-dsm-muted px-2 py-2 text-left border-b border-dsm-border;
+    @apply text-[11px] font-semibold uppercase tracking-wider text-[#808a9d] px-2.5 py-2.5 text-left border-b border-[#272e3f];
   }
   .tbl-wrapper td {
-    @apply px-2 py-1.5 text-[12px] text-dsm-text overflow-hidden text-ellipsis whitespace-nowrap;
+    @apply px-2.5 py-2 text-[12px] text-[#d1d5db] overflow-hidden text-ellipsis whitespace-nowrap;
   }
 
   /* ─ Sortable column headers ─ */
@@ -189,7 +211,7 @@
     user-select: none;
   }
   .sortable-th:hover {
-    color: #c9d1d9;
+    color: #e5e7eb;
   }
   .sortable-th .sort-label {
     display: inline-flex;
@@ -204,39 +226,70 @@
     opacity: 0.7;
   }
   .sortable-th.sort-active {
-    color: #c9d1d9;
+    color: #ffffff;
   }
   .sortable-th.sort-active .sort-icon {
     opacity: 1;
-    color: #58a6ff;
+    color: #388bfd;
   }
-  /* ─ Tab navigation ─ */
-  .tab-active {
-    color: #c9d1d9;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-  }
-  .tab-inactive {
-    color: #7d8590;
-    background: transparent;
-    border: 1px solid transparent;
-  }
-  .tab-inactive:hover {
-    color: #c9d1d9;
+
+  /* ─ Segmented Tab Navigation ─ */
+  .tab-segmented-container {
+    display: inline-flex;
+    align-items: center;
     background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 2px;
+    border-radius: 8px;
+  }
+  .tab-segmented-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #808a9d;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .tab-segmented-btn:hover {
+    color: #d1d5db;
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .tab-segmented-btn.tab-active {
+    color: #ffffff;
+    background: rgba(56, 139, 253, 0.2);
+    border: 1px solid rgba(56, 139, 253, 0.4);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
   }
 
   /* ─ Container state pill (raw containers) ─ */
   .pill-paused {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium leading-none;
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium leading-none shadow-sm;
     background: rgba(137, 87, 229, 0.15);
     color: #d2a8ff;
     border: 1px solid rgba(137, 87, 229, 0.3);
   }
   .pill-exited {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium leading-none;
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium leading-none shadow-sm;
     background: rgba(110, 118, 129, 0.12);
     color: #7d8590;
     border: 1px solid rgba(110, 118, 129, 0.25);
   }
+
+  /* ─ Skeleton Shimmer Effect ─ */
+  .skeleton-box {
+    display: inline-block;
+    height: 14px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.09) 50%, rgba(255, 255, 255, 0.04) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
 }
+

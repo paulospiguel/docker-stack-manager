@@ -82,8 +82,8 @@ export function containerBadge(name: string): string {
   const svc = getServicePart(name);
   const isFE = isFrontendService(svc);
   return isFE
-    ? `<span class="badge-fe" title="Frontend">FE</span>`
-    : `<span class="badge-be" title="Backend">BE</span>`;
+    ? `<span class="badge-fe" title="Frontend"><i data-lucide="monitor" class="icon-xs"></i> FE</span>`
+    : `<span class="badge-be" title="Backend"><i data-lucide="server" class="icon-xs"></i> BE</span>`;
 }
 
 /** Generate a short random unique ID */

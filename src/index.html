@@ -34,17 +34,17 @@
           class="ml-1 text-[11px] px-2 py-0.5 rounded-full bg-dsm-panel2 border border-dsm-border text-dsm-muted font-mono"
         ></span>
         <!-- Tab Navigation -->
-        <div class="flex items-center gap-0.5 ml-3 pl-3 border-l border-dsm-border">
+        <div class="tab-segmented-container ml-3">
           <button
             id="tabServices"
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-medium transition-all tab-active"
+            class="tab-segmented-btn tab-active"
             data-tab="services"
           >
             <i data-lucide="layers" class="icon-xs"></i> Services
           </button>
           <button
             id="tabContainers"
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-medium transition-all tab-inactive"
+            class="tab-segmented-btn tab-inactive"
             data-tab="containers"
           >
             <i data-lucide="container" class="icon-xs"></i> Containers
@@ -228,6 +228,14 @@
               >
                 <i data-lucide="square" class="icon-xs"></i> Stop
               </button>
+              <button
+                id="restartSelected"
+                disabled
+                class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium text-yellow-400/70 bg-yellow-500/5 border border-yellow-500/15 hover:bg-yellow-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                title="Restart selected services"
+              >
+                <i data-lucide="rotate-ccw" class="icon-xs"></i> Restart
+              </button>
             </div>
 
             <button
@@ -239,17 +247,33 @@
             </button>
           </div>
           <div class="flex items-center gap-2">
-            <div class="relative">
+            <!-- Status filter dropdown -->
+            <select
+              id="statusFilterSelector"
+              class="bg-dsm-panel2 border border-dsm-border text-dsm-text rounded px-1.5 py-1.5 text-[11px] focus:outline-none focus:border-dsm-primary cursor-pointer"
+              title="Filter by status"
+            >
+              <option value="all">All statuses</option>
+              <option value="running">Running only</option>
+              <option value="stopped">Stopped only</option>
+            </select>
+            <!-- Search input with clear button -->
+            <div class="relative flex items-center">
               <i
                 data-lucide="search"
                 class="icon-xs absolute left-2 top-1/2 -translate-y-1/2 text-dsm-muted pointer-events-none"
               ></i>
               <input
-                type="search"
+                type="text"
                 id="filterInput"
-                class="pl-7 pr-2 py-1.5 rounded text-[11px] bg-dsm-panel2 border border-dsm-border text-dsm-text placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary w-44 transition-colors"
-                placeholder="Filter..."
+                class="pl-7 pr-6 py-1.5 rounded text-[11px] bg-dsm-panel2 border border-dsm-border text-dsm-text placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary w-44 transition-colors"
+                placeholder="Filter (Ctrl+F)..."
               />
+              <button
+                id="filterClearBtn"
+                class="hidden absolute right-1.5 p-0.5 text-dsm-muted hover:text-dsm-text text-[10px]"
+                title="Clear filter"
+              >✕</button>
             </div>
             <div class="flex items-center gap-1.5 text-[11px] text-dsm-muted">
               <i data-lucide="timer" class="icon-xs"></i>
@@ -736,6 +760,35 @@
             title="Restore favorite groups"
           >
             <i data-lucide="star" class="icon-xs"></i> Restore favorite groups
+          </button>
+        </div>
+      </div>
+    <!-- Custom Confirmation Modal -->
+    <div
+      id="confirmModal"
+      class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    >
+      <div
+        class="w-[400px] flex flex-col rounded-xl bg-dsm-panel border border-dsm-border shadow-2xl overflow-hidden"
+      >
+        <div class="flex items-center justify-between px-5 py-3.5 border-b border-dsm-border">
+          <div class="flex items-center gap-2">
+            <i data-lucide="help-circle" class="icon-sm text-yellow-400"></i>
+            <h3 id="confirmModalTitle" class="text-sm font-semibold text-dsm-text">Confirmation</h3>
+          </div>
+          <button id="confirmModalClose" class="icon-sm p-1 rounded text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div class="px-5 py-4 text-[12.5px] text-dsm-text/90 leading-relaxed" id="confirmModalMessage">
+          Are you sure you want to proceed?
+        </div>
+        <div class="flex items-center justify-end gap-2 px-5 py-3 border-t border-dsm-border bg-dsm-panel2/50">
+          <button id="confirmModalCancel" class="px-4 py-1.5 rounded-lg text-[12px] font-medium text-dsm-muted border border-dsm-border hover:text-dsm-text hover:border-dsm-muted transition-colors">
+            Cancel
+          </button>
+          <button id="confirmModalOk" class="px-4 py-1.5 rounded-lg text-[12px] font-medium bg-dsm-primary text-white hover:bg-dsm-primary-h transition-colors">
+            Confirm
           </button>
         </div>
       </div>
