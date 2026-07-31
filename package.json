@@ -1,6 +1,6 @@
 {
   "name": "docker-vision-manager",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "description": "A desktop application to manage Docker stacks with ease.",
   "author": {
     "name": "Docker Vision Manager",
@@ -37,6 +37,12 @@
         "nsis"
       ],
       "icon": "assets/icons/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
     }
   },
   "scripts": {
