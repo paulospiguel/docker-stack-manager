@@ -1,6 +1,14 @@
-# Docker Vision Manager (Electron + TypeScript)
+<p align="center">
+  <img src="assets/icons/icon.png" width="160" height="160" alt="Docker Vision Manager Logo" />
+</p>
 
-App Electron com TypeScript para gerenciar containers Docker com scripts externos em Python/Bash.
+<h1 align="center">Docker Vision Manager</h1>
+
+<p align="center">
+  <strong>Aplicação Desktop (Electron + TypeScript) para gerenciar containers e stacks Docker com facilidade.</strong>
+</p>
+
+---
 
 ## Funcionalidades
 

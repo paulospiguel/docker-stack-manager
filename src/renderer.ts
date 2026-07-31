@@ -328,15 +328,17 @@ function getSelectedIds(): string[] {
 }
 
 function updateSelectionButtons(): void {
-  const count = document.querySelectorAll<HTMLInputElement>(
-    ".container-check:checked",
-  ).length;
+  const checkboxes = document.querySelectorAll<HTMLInputElement>(".container-check");
+  const total = checkboxes.length;
+  const count = Array.from(checkboxes).filter(cb => cb.checked).length;
   const hasSelection = count > 0;
   startSelectedBtn.disabled = !hasSelection;
   stopSelectedBtn.disabled = !hasSelection;
   const label = document.getElementById("selectedLabel");
   if (label)
     label.textContent = hasSelection ? `${count} selected` : "Selected";
+  selectAllEl.indeterminate = count > 0 && count < total;
+  selectAllEl.checked = count === total && total > 0;
 }
 
 function visibleContainers(): ContainerInfo[] {
@@ -484,6 +486,7 @@ function setActiveGroup(id: string): void {
 
 // ── Table ─────────────────────────────────────────────────────────────────────
 function renderTable(): void {
+  const selectedIds = getSelectedIds();
   body.innerHTML = "";
   const visible = visibleContainers();
 
@@ -558,7 +561,7 @@ function renderTable(): void {
     tr.dataset["fullname"] = c.name;
     tr.innerHTML = `
       <td class="!px-2 text-center">
-        <input type="checkbox" class="container-check accent-dsm-primary" value="${fullName}" />
+        <input type="checkbox" class="container-check accent-dsm-primary" value="${fullName}" ${selectedIds.includes(fullName) ? "checked" : ""} />
       </td>
       <td class="!px-1 text-center">
         <button
@@ -1228,19 +1231,25 @@ if (modalSearchEl) {
 );
 (document.getElementById("startAll") as HTMLButtonElement).addEventListener(
   "click",
-  () =>
-    void runAction(
-      "start",
-      visibleContainers().map((c) => c.id),
-    ),
+  () => {
+    if (confirm("Are you sure you want to START ALL visible services?")) {
+      void runAction(
+        "start",
+        visibleContainers().map((c) => c.id),
+      );
+    }
+  }
 );
 (document.getElementById("stopAll") as HTMLButtonElement).addEventListener(
   "click",
-  () =>
-    void runAction(
-      "stop",
-      visibleContainers().map((c) => c.id),
-    ),
+  () => {
+    if (confirm("Are you sure you want to STOP ALL visible services?")) {
+      void runAction(
+        "stop",
+        visibleContainers().map((c) => c.id),
+      );
+    }
+  }
 );
 (
   document.getElementById("startSelected") as HTMLButtonElement
@@ -1284,12 +1293,6 @@ selectAllEl.addEventListener("change", (e) => {
 body.addEventListener("change", (e) => {
   if ((e.target as HTMLElement).classList.contains("container-check")) {
     updateSelectionButtons();
-    const total = document.querySelectorAll(".container-check").length;
-    const checked = document.querySelectorAll(
-      ".container-check:checked",
-    ).length;
-    selectAllEl.indeterminate = checked > 0 && checked < total;
-    selectAllEl.checked = checked === total && total > 0;
   }
 });
 
@@ -1487,12 +1490,17 @@ function cGetSelected(): string[] {
 }
 
 function cUpdateSelectionButtons(): void {
-  const count = document.querySelectorAll<HTMLInputElement>(".c-check:checked").length;
+  const checkboxes = document.querySelectorAll<HTMLInputElement>(".c-check");
+  const total = checkboxes.length;
+  const count = Array.from(checkboxes).filter(cb => cb.checked).length;
   const has = count > 0;
   cStartSelected.disabled = !has;
   cStopSelected.disabled = !has;
   cRestartSelected.disabled = !has;
   cSelectedLabel.textContent = has ? `${count} selected` : "Selected";
+  
+  cSelectAll.indeterminate = count > 0 && count < total;
+  cSelectAll.checked = count === total && total > 0;
 }
 
 function cVisibleContainers(): RawContainerInfo[] {
@@ -1530,6 +1538,7 @@ function cStatePill(c: RawContainerInfo): string {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function cRenderTable(): void {
+  const selectedIds = cGetSelected();
   cBody.innerHTML = "";
   const visible = cVisibleContainers();
   const running = visible.filter((c) => c.running).length;
@@ -1560,7 +1569,7 @@ function cRenderTable(): void {
 
     tr.innerHTML = `
       <td class="!px-2 text-center">
-        <input type="checkbox" class="c-check accent-dsm-primary" value="${escHtml(c.id)}" ${isLoading ? "disabled" : ""} />
+        <input type="checkbox" class="c-check accent-dsm-primary" value="${escHtml(c.id)}" ${isLoading ? "disabled" : ""} ${selectedIds.includes(c.id) ? "checked" : ""} />
       </td>
       <td>
         <div class="flex items-center gap-1 min-w-0">
@@ -1652,10 +1661,6 @@ cSelectAll.addEventListener("change", () => {
 cBody.addEventListener("change", (e) => {
   if ((e.target as HTMLElement).classList.contains("c-check")) {
     cUpdateSelectionButtons();
-    const total = document.querySelectorAll(".c-check").length;
-    const checked = document.querySelectorAll(".c-check:checked").length;
-    cSelectAll.indeterminate = checked > 0 && checked < total;
-    cSelectAll.checked = checked === total && total > 0;
   }
 });
 
