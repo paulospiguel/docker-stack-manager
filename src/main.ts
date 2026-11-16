@@ -1,8 +1,23 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
 import path from "node:path";
 import os from "node:os";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import {
+  getAiProviderInfo,
+  isAiProvider,
+  type AiAnalyzeRequest,
+  type AiAnalyzeResult,
+  type AiKeyStatus,
+} from "./ai";
 
 interface ContainerInfo {
   id: string;
@@ -16,6 +31,8 @@ interface ContainerInfo {
 interface ScriptResult {
   ok: boolean;
   error?: string;
+  warning?: string;
+  failed?: string[];
   containers?: ContainerInfo[];
   changed?: number;
 }
@@ -154,6 +171,476 @@ ipcMain.handle(
   "rawcontainers:control",
   async (_event, payload: { action: "start" | "stop" | "restart"; ids: string[] }) =>
     runContainerScript([payload.action, ...payload.ids]),
+);
+
+// ── AI error analysis ─────────────────────────────────────────────────────────
+
+interface SecretEntry {
+  encrypted: boolean;
+  value: string;
+}
+
+interface SecretsFile {
+  version: 1;
+  keys: Record<string, SecretEntry>;
+}
+
+const AI_SYSTEM_PROMPT = [
+  "Você é um engenheiro sênior de Docker Swarm e DevOps.",
+  "Analise a falha do serviço usando APENAS as evidências fornecidas.",
+  "Responda em português do Brasil, em texto simples, com as seções:",
+  "1) Diagnóstico provável",
+  "2) Evidências",
+  "3) Correção sugerida (inclua comandos quando aplicável)",
+  "4) Como verificar",
+  "Se as evidências forem insuficientes, diga exatamente o que verificar.",
+  "Não invente causas nem comandos.",
+].join(" ");
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function secretsFilePath(): string {
+  return path.join(app.getPath("userData"), "ai-secrets.json");
+}
+
+function canEncryptSecrets(): boolean {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return false;
+    if (
+      process.platform === "linux" &&
+      safeStorage.getSelectedStorageBackend() === "basic_text"
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readSecrets(): SecretsFile {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(secretsFilePath(), "utf-8"),
+    ) as Partial<SecretsFile>;
+    return {
+      version: 1,
+      keys:
+        parsed.keys && typeof parsed.keys === "object" ? parsed.keys : {},
+    };
+  } catch {
+    return { version: 1, keys: {} };
+  }
+}
+
+function writeSecrets(secrets: SecretsFile): void {
+  const filePath = secretsFilePath();
+  if (Object.keys(secrets.keys).length === 0) {
+    try {
+      unlinkSync(filePath);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, JSON.stringify(secrets), { mode: 0o600 });
+  try {
+    chmodSync(filePath, 0o600);
+  } catch {
+    /* ignore (Windows) */
+  }
+}
+
+function saveProviderKey(
+  provider: string,
+  key: string,
+): { encrypted: boolean } {
+  const encrypted = canEncryptSecrets();
+  const value = encrypted
+    ? safeStorage.encryptString(key).toString("base64")
+    : Buffer.from(key, "utf-8").toString("base64");
+  const secrets = readSecrets();
+  secrets.keys[provider] = { encrypted, value };
+  writeSecrets(secrets);
+  return { encrypted };
+}
+
+function getProviderKey(provider: string): string | null {
+  const entry = readSecrets().keys[provider];
+  if (!entry || typeof entry.value !== "string") return null;
+  try {
+    if (entry.encrypted) {
+      if (!safeStorage.isEncryptionAvailable()) return null;
+      return safeStorage.decryptString(Buffer.from(entry.value, "base64"));
+    }
+    return Buffer.from(entry.value, "base64").toString("utf-8");
+  } catch {
+    return null;
+  }
+}
+
+function providerKeyStatus(provider: string): AiKeyStatus {
+  const entry = readSecrets().keys[provider];
+  if (!entry) return { hasKey: false, encrypted: false };
+  return {
+    hasKey: getProviderKey(provider) !== null,
+    encrypted: Boolean(entry.encrypted && canEncryptSecrets()),
+  };
+}
+
+function collectServiceLogs(serviceName: string): Promise<string> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(serviceName)) {
+    return Promise.resolve("");
+  }
+  return new Promise((resolve) => {
+    execFile(
+      "docker",
+      ["service", "logs", "--tail", "120", serviceName],
+      { timeout: 15_000, maxBuffer: 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err && !stdout) {
+          resolve("");
+          return;
+        }
+        const raw = `${stdout}\n${stderr}`.trim();
+        resolve(raw.length > 14_000 ? raw.slice(-14_000) : raw);
+      },
+    );
+  });
+}
+
+function buildAnalysisPrompt(request: AiAnalyzeRequest, logs: string): string {
+  const sections = [
+    `Serviço: ${request.serviceName}`,
+    `Imagem: ${request.image}`,
+    `Réplicas: ${request.status}`,
+    `Estado da última task: ${request.taskState || "desconhecido"}`,
+    `Erro da última task: ${request.taskError || "nenhum"}`,
+    `Estado do update: ${request.updateState || "desconhecido"}`,
+    `Mensagem do update: ${request.updateMessage || "nenhuma"}`,
+    `Plataforma: ${process.platform}`,
+  ];
+  if (logs) {
+    sections.push("", "Logs recentes (últimas 120 linhas):", logs);
+  }
+  return sections.join("\n");
+}
+
+async function callJson(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+): Promise<Record<string, unknown> | null> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(90_000),
+  });
+  const raw = await response.text();
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
+  } catch {
+    /* non-JSON error body */
+  }
+  if (!response.ok) {
+    const errorNode = parsed?.["error"] as
+      | Record<string, unknown>
+      | string
+      | undefined;
+    const message =
+      (typeof errorNode === "object" && errorNode
+        ? (errorNode["message"] as string | undefined)
+        : typeof errorNode === "string"
+          ? errorNode
+          : undefined) ||
+      (parsed?.["message"] as string | undefined) ||
+      raw.slice(0, 600).trim() ||
+      `${response.status} ${response.statusText}`;
+    throw new Error(`${response.status}: ${message}`);
+  }
+  return parsed;
+}
+
+function joinTextParts(parts: unknown): string {
+  if (typeof parts === "string") return parts;
+  if (!Array.isArray(parts)) return "";
+  return parts
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (part && typeof part === "object") {
+        const text = (part as { text?: unknown }).text;
+        if (typeof text === "string") return text;
+      }
+      return "";
+    })
+    .join("");
+}
+
+async function callOpenAiCompatible(
+  baseUrl: string,
+  key: string | null,
+  model: string,
+  prompt: string,
+): Promise<string> {
+  const data = await callJson(
+    `${baseUrl.replace(/\/+$/, "")}/chat/completions`,
+    key ? { Authorization: `Bearer ${key}` } : {},
+    {
+      model,
+      messages: [
+        { role: "system", content: AI_SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.2,
+      max_tokens: 1200,
+    },
+  );
+  const choices = data?.["choices"] as
+    | Array<Record<string, unknown>>
+    | undefined;
+  const message = choices?.[0]?.["message"] as
+    | Record<string, unknown>
+    | undefined;
+  return (
+    joinTextParts(message?.["content"]) ||
+    joinTextParts(choices?.[0]?.["text"])
+  );
+}
+
+async function analyzeServiceError(
+  request: AiAnalyzeRequest,
+): Promise<AiAnalyzeResult> {
+  if (!request || typeof request !== "object") {
+    return { ok: false, error: "Invalid AI request." };
+  }
+  if (!isAiProvider(request.provider)) {
+    return { ok: false, error: "Invalid AI provider." };
+  }
+  if (
+    typeof request.serviceName !== "string" ||
+    !request.serviceName.trim()
+  ) {
+    return { ok: false, error: "Invalid service name." };
+  }
+
+  const info = getAiProviderInfo(request.provider);
+  const key = getProviderKey(request.provider);
+  if (info.requiresKey && !key) {
+    return {
+      ok: false,
+      error: `No API key configured for ${info.label}. Open Settings → AI Error Analysis.`,
+    };
+  }
+
+  let model = (request.model ?? "").trim() || info.defaultModel;
+  let azureEndpoint = "";
+  let azureDeployment = "";
+  if (request.provider === "azure") {
+    azureEndpoint = (request.azureEndpoint ?? "").trim().replace(/\/+$/, "");
+    azureDeployment = (request.azureDeployment ?? "").trim();
+    if (!azureEndpoint || !azureDeployment) {
+      return {
+        ok: false,
+        error: "Azure OpenAI endpoint and deployment are required in Settings.",
+      };
+    }
+    model = azureDeployment;
+  } else if (!model) {
+    return { ok: false, error: "No model configured for the AI provider." };
+  }
+
+  const logs = request.includeLogs
+    ? await collectServiceLogs(request.serviceName)
+    : "";
+  const prompt = buildAnalysisPrompt(request, logs);
+
+  let analysis = "";
+  switch (request.provider) {
+    case "anthropic": {
+      const data = await callJson(
+        "https://api.anthropic.com/v1/messages",
+        {
+          "x-api-key": key ?? "",
+          "anthropic-version": "2023-06-01",
+        },
+        {
+          model,
+          max_tokens: 1200,
+          temperature: 0.2,
+          system: AI_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: prompt }],
+        },
+      );
+      analysis = joinTextParts(data?.["content"]);
+      break;
+    }
+    case "google": {
+      const modelPath = model.replace(/^models\//, "");
+      const data = await callJson(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelPath)}:generateContent`,
+        { "x-goog-api-key": key ?? "" },
+        {
+          systemInstruction: { parts: [{ text: AI_SYSTEM_PROMPT }] },
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 1200,
+          },
+        },
+      );
+      const candidates = data?.["candidates"] as
+        | Array<Record<string, unknown>>
+        | undefined;
+      const content = candidates?.[0]?.["content"] as
+        | Record<string, unknown>
+        | undefined;
+      analysis = joinTextParts(content?.["parts"]);
+      break;
+    }
+    case "azure": {
+      const base = azureEndpoint.endsWith("/openai")
+        ? `${azureEndpoint}/deployments`
+        : `${azureEndpoint}/openai/deployments`;
+      const data = await callJson(
+        `${base}/${encodeURIComponent(azureDeployment)}/chat/completions?api-version=2024-10-21`,
+        { "api-key": key ?? "" },
+        {
+          messages: [
+            { role: "system", content: AI_SYSTEM_PROMPT },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.2,
+          max_tokens: 1200,
+        },
+      );
+      const choices = data?.["choices"] as
+        | Array<Record<string, unknown>>
+        | undefined;
+      const message = choices?.[0]?.["message"] as
+        | Record<string, unknown>
+        | undefined;
+      analysis = joinTextParts(message?.["content"]);
+      break;
+    }
+    case "ollama":
+      analysis = await callOpenAiCompatible(
+        request.ollamaUrl?.trim() || "http://localhost:11434/v1",
+        key,
+        model,
+        prompt,
+      );
+      break;
+    case "openai":
+      analysis = await callOpenAiCompatible(
+        "https://api.openai.com/v1",
+        key,
+        model,
+        prompt,
+      );
+      break;
+    case "groq":
+      analysis = await callOpenAiCompatible(
+        "https://api.groq.com/openai/v1",
+        key,
+        model,
+        prompt,
+      );
+      break;
+    case "deepseek":
+      analysis = await callOpenAiCompatible(
+        "https://api.deepseek.com",
+        key,
+        model,
+        prompt,
+      );
+      break;
+    case "openrouter":
+      analysis = await callOpenAiCompatible(
+        "https://openrouter.ai/api/v1",
+        key,
+        model,
+        prompt,
+      );
+      break;
+  }
+
+  const trimmed = analysis.trim();
+  if (!trimmed) {
+    return {
+      ok: false,
+      error: "The AI provider returned an empty response.",
+    };
+  }
+  return {
+    ok: true,
+    analysis: trimmed,
+    provider: request.provider,
+    model,
+    includesLogs: Boolean(logs),
+  };
+}
+
+ipcMain.handle("ai:keyStatus", (_event, provider: unknown): AiKeyStatus => {
+  if (!isAiProvider(provider)) return { hasKey: false, encrypted: false };
+  return providerKeyStatus(provider);
+});
+
+ipcMain.handle(
+  "ai:saveKey",
+  (
+    _event,
+    provider: unknown,
+    key: unknown,
+  ): { ok: boolean; error?: string; encrypted?: boolean } => {
+    if (!isAiProvider(provider)) {
+      return { ok: false, error: "Invalid AI provider." };
+    }
+    if (typeof key !== "string" || !key.trim()) {
+      return { ok: false, error: "API key is empty." };
+    }
+    if (key.length > 20_000) {
+      return { ok: false, error: "API key is too long." };
+    }
+    try {
+      const result = saveProviderKey(provider, key.trim());
+      return { ok: true, ...result };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) };
+    }
+  },
+);
+
+ipcMain.handle(
+  "ai:clearKey",
+  (_event, provider: unknown): { ok: boolean; error?: string } => {
+    if (!isAiProvider(provider)) {
+      return { ok: false, error: "Invalid AI provider." };
+    }
+    try {
+      const secrets = readSecrets();
+      delete secrets.keys[provider];
+      writeSecrets(secrets);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) };
+    }
+  },
+);
+
+ipcMain.handle(
+  "ai:analyze",
+  async (_event, request: unknown): Promise<AiAnalyzeResult> => {
+    try {
+      return await analyzeServiceError(request as AiAnalyzeRequest);
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) };
+    }
+  },
 );
 
 // ── Terminal launcher helper for Linux/Cross-platform ─────────────────────────

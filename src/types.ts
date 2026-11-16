@@ -1,5 +1,11 @@
 // ── Shared types ──────────────────────────────────────────────────────────────
 
+import type {
+  AiAnalyzeRequest,
+  AiAnalyzeResult,
+  AiKeyStatus,
+} from "./ai";
+
 export type Action = "start" | "stop" | "restart";
 
 export interface ContainerInfo {
@@ -9,6 +15,11 @@ export interface ContainerInfo {
   image: string;
   running: boolean;
   uptime?: string;
+  taskState?: string;
+  taskDesiredState?: string;
+  taskError?: string;
+  updateState?: string;
+  updateMessage?: string;
 }
 
 export interface RawContainerInfo {
@@ -25,6 +36,8 @@ export interface RawContainerInfo {
 export interface ApiResult {
   ok: boolean;
   error?: string;
+  warning?: string;
+  failed?: string[];
   containers?: ContainerInfo[];
   changed?: number;
 }
@@ -75,6 +88,19 @@ export interface DockerApi {
   execContainer: (
     containerId: string,
   ) => Promise<{ ok: boolean; error?: string }>;
+
+  // ── AI error analysis ───────────────────────────────────────────────────────
+  getAiKeyStatus: (provider: string) => Promise<AiKeyStatus>;
+  saveAiApiKey: (
+    provider: string,
+    key: string,
+  ) => Promise<{ ok: boolean; error?: string; encrypted?: boolean }>;
+  clearAiApiKey: (
+    provider: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  analyzeServiceError: (
+    request: AiAnalyzeRequest,
+  ) => Promise<AiAnalyzeResult>;
 }
 
 export interface ContainerGroup {

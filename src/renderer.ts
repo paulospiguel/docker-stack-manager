@@ -28,9 +28,18 @@ import {
   Monitor,
   Server,
   HelpCircle,
+  Sparkles,
+  Copy,
 } from "lucide";
 
 import type { Action, ContainerInfo, ContainerGroup, DockerApi, RawContainerInfo } from "./types";
+import {
+  AI_PROVIDERS,
+  getAiProviderInfo,
+  type AiAnalyzeRequest,
+  type AiAnalyzeResult,
+  type AiProvider,
+} from "./ai";
 import {
   escHtml,
   shortName,
@@ -110,6 +119,7 @@ const ctxLogsBtn = document.getElementById(
 const ctxChmodBtn = document.getElementById(
   "ctxChmod",
 ) as HTMLButtonElement;
+const ctxAiBtn = document.getElementById("ctxAi") as HTMLButtonElement;
 const openVisionTerminalBtn = document.getElementById(
   "openVisionTerminal",
 ) as HTMLButtonElement;
@@ -135,6 +145,61 @@ const settingsWslDistroEl = document.getElementById(
 const settingsPathStatusEl = document.getElementById(
   "settingsPathStatus",
 ) as HTMLDivElement;
+const settingsAiProviderEl = document.getElementById(
+  "settingsAiProvider",
+) as HTMLSelectElement;
+const settingsAiModelEl = document.getElementById(
+  "settingsAiModel",
+) as HTMLInputElement;
+const settingsAiModelHintEl = document.getElementById(
+  "settingsAiModelHint",
+) as HTMLParagraphElement;
+const settingsAiAzureRowsEl = document.getElementById(
+  "settingsAiAzureRows",
+) as HTMLDivElement;
+const settingsAiAzureEndpointEl = document.getElementById(
+  "settingsAiAzureEndpoint",
+) as HTMLInputElement;
+const settingsAiAzureDeploymentEl = document.getElementById(
+  "settingsAiAzureDeployment",
+) as HTMLInputElement;
+const settingsAiOllamaRowEl = document.getElementById(
+  "settingsAiOllamaRow",
+) as HTMLDivElement;
+const settingsAiOllamaUrlEl = document.getElementById(
+  "settingsAiOllamaUrl",
+) as HTMLInputElement;
+const settingsAiKeyEl = document.getElementById(
+  "settingsAiKey",
+) as HTMLInputElement;
+const settingsAiClearKeyBtn = document.getElementById(
+  "settingsAiClearKey",
+) as HTMLButtonElement;
+const settingsAiKeyStatusEl = document.getElementById(
+  "settingsAiKeyStatus",
+) as HTMLDivElement;
+const settingsAiIncludeLogsEl = document.getElementById(
+  "settingsAiIncludeLogs",
+) as HTMLInputElement;
+const aiModalEl = document.getElementById("aiModal") as HTMLDivElement;
+const aiModalTitleEl = document.getElementById(
+  "aiModalTitle",
+) as HTMLHeadingElement;
+const aiModalMetaEl = document.getElementById(
+  "aiModalMeta",
+) as HTMLParagraphElement;
+const aiModalResultEl = document.getElementById(
+  "aiModalResult",
+) as HTMLPreElement;
+const aiModalCopyBtn = document.getElementById(
+  "aiModalCopy",
+) as HTMLButtonElement;
+const aiModalCloseBtn = document.getElementById(
+  "aiModalClose",
+) as HTMLButtonElement;
+const aiModalCloseFooterBtn = document.getElementById(
+  "aiModalCloseBtn",
+) as HTMLButtonElement;
 const startSelectedBtn = document.getElementById(
   "startSelected",
 ) as HTMLButtonElement;
@@ -201,8 +266,10 @@ let groupPickerService: string | null = null;
 let ctxService: string | null = null;
 let ctxBuildPath: string | null = null;
 let ctxContainerName: string | null = null;
+let ctxServiceInfo: ContainerInfo | null = null;
 let loadingContainers = new Set<string>();
 let refreshSerial = 0;
+let aiRequestSerial = 0;
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 const SETTINGS_KEY = "dsm_settings_v1";
@@ -211,22 +278,42 @@ interface AppSettings {
   visionPath: string;
   useWsl: boolean;
   wslDistro: string;
+  aiProvider: AiProvider;
+  aiModel: string;
+  aiAzureEndpoint: string;
+  aiAzureDeployment: string;
+  aiOllamaUrl: string;
+  aiIncludeLogs: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   visionPath: "~/vision",
   useWsl: false,
   wslDistro: "Ubuntu",
+  aiProvider: "openai",
+  aiModel: "",
+  aiAzureEndpoint: "",
+  aiAzureDeployment: "",
+  aiOllamaUrl: "http://localhost:11434/v1",
+  aiIncludeLogs: true,
 };
 
 function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (raw)
-      return {
+    if (raw) {
+      const merged = {
         ...DEFAULT_SETTINGS,
         ...(JSON.parse(raw) as Partial<AppSettings>),
       };
+      if (!AI_PROVIDERS.some((provider) => provider.id === merged.aiProvider)) {
+        merged.aiProvider = DEFAULT_SETTINGS.aiProvider;
+      }
+      if (typeof merged.aiIncludeLogs !== "boolean") {
+        merged.aiIncludeLogs = DEFAULT_SETTINGS.aiIncludeLogs;
+      }
+      return merged;
+    }
   } catch {
     /* ignore */
   }
@@ -270,6 +357,8 @@ function renderLucide(): void {
       Monitor,
       Server,
       HelpCircle,
+      Sparkles,
+      Copy,
     },
   });
 }
@@ -383,6 +472,116 @@ function updateSelectionButtons(): void {
     label.textContent = hasSelection ? `${count} selected` : "Selected";
   selectAllEl.indeterminate = count > 0 && count < total;
   selectAllEl.checked = count === total && total > 0;
+}
+
+type ServicePhase =
+  | "running"
+  | "starting"
+  | "stopping"
+  | "failed"
+  | "stalled"
+  | "stopped";
+
+interface ServiceStatusInfo {
+  phase: ServicePhase;
+  runningReplicas: number;
+  desiredReplicas: number;
+  label: string;
+  pillClass: string;
+  spinning: boolean;
+  detail: string;
+  tooltip: string;
+}
+
+function parseReplicaStatus(status: string): { running: number; desired: number } | null {
+  const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(status ?? "");
+  if (!match) return null;
+  return { running: Number(match[1]), desired: Number(match[2]) };
+}
+
+function cleanTaskError(error?: string): string {
+  const trimmed = (error ?? "").trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function stateWord(value?: string): string {
+  return (value ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+}
+
+function getServiceStatus(c: ContainerInfo): ServiceStatusInfo {
+  const replicas = parseReplicaStatus(c.status);
+  const runningReplicas = replicas ? replicas.running : c.running ? 1 : 0;
+  const desiredReplicas = replicas ? replicas.desired : c.running ? 1 : 0;
+  const statusText = c.status?.trim() || `${runningReplicas}/${desiredReplicas}`;
+  const taskWord = stateWord(c.taskState);
+  const updateWord = stateWord(c.updateState);
+  const taskError = cleanTaskError(c.taskError);
+  const updateMessage = (c.updateMessage ?? "").trim();
+  const failedTask = taskWord === "failed" || taskWord === "rejected";
+  const inactiveTask = ["shutdown", "complete", "orphaned", "remove"].includes(taskWord);
+  const pausedUpdate = updateWord === "paused" || updateWord === "rollback_paused";
+
+  let phase: ServicePhase;
+  if (desiredReplicas === 0) {
+    phase = runningReplicas > 0 ? "stopping" : "stopped";
+  } else if (runningReplicas >= desiredReplicas) {
+    phase = "running";
+  } else if (failedTask || pausedUpdate) {
+    phase = "failed";
+  } else if (inactiveTask) {
+    phase = "stalled";
+  } else if (taskError) {
+    phase = "failed";
+  } else {
+    phase = "starting";
+  }
+
+  let label = "Stopped";
+  let pillClass = "pill-down";
+  let spinning = false;
+  let detail = "";
+  let tooltip = statusText;
+
+  if (phase === "running") {
+    label = statusText;
+    pillClass = "pill-up";
+  } else if (phase === "starting") {
+    label = `Starting (${statusText})`;
+    pillClass = "pill-loading";
+    spinning = true;
+    detail = c.taskState ? `Task: ${c.taskState}` : "Waiting for a task...";
+    tooltip = detail;
+  } else if (phase === "stopping") {
+    label = `Stopping (${statusText})`;
+    pillClass = "pill-loading";
+    spinning = true;
+    detail = c.taskState ?? "";
+    tooltip = detail || `Stopping ${statusText}`;
+  } else if (phase === "failed") {
+    label = `Failed (${statusText})`;
+    pillClass = "pill-down";
+    detail = taskError || updateMessage || c.taskState || "Last task failed";
+    tooltip = [taskError, updateMessage, c.taskState].filter(Boolean).join("\n");
+  } else if (phase === "stalled") {
+    label = `Stalled (${statusText})`;
+    pillClass = "pill-warning";
+    detail = c.taskState ? `No active task · ${c.taskState}` : "No active task";
+    tooltip = `${detail}\nClick Redeploy to force a new task.`;
+  }
+
+  return {
+    phase,
+    runningReplicas,
+    desiredReplicas,
+    label,
+    pillClass,
+    spinning,
+    detail,
+    tooltip,
+  };
 }
 
 function visibleContainers(): ContainerInfo[] {
@@ -587,36 +786,43 @@ function renderTable(): void {
     const badge = containerBadge(c.name);
 
     const isManualLoading = loadingContainers.has(c.name);
-    let runningReplicas = 0;
-    let desiredReplicas = 0;
-    let isTransitioning = false;
-    if (c.status && c.status.includes("/")) {
-      const parts = c.status.split("/");
-      runningReplicas = parseInt(parts[0], 10) || 0;
-      desiredReplicas = parseInt(parts[1], 10) || 0;
-      if (runningReplicas !== desiredReplicas) isTransitioning = true;
-    }
-
-    const showLoading = isManualLoading || isTransitioning;
-    let pillClass = "pill-down";
-    let pillLabel = "Stopped";
-
-    if (showLoading) {
-      pillClass = "pill-loading";
-      if (isManualLoading && !isTransitioning) {
-        pillLabel = "Working...";
-      } else {
-        pillLabel = desiredReplicas > 0 ? `Starting (${c.status})` : `Stopping (${c.status})`;
-      }
-    } else if (c.running) {
-      pillClass = "pill-up";
-      pillLabel = escHtml(c.status);
-    }
+    const statusInfo = getServiceStatus(c);
+    const isTransitioning =
+      statusInfo.phase === "starting" || statusInfo.phase === "stopping";
+    const showWorking = isManualLoading && !isTransitioning;
+    const pillClass = showWorking ? "pill-loading" : statusInfo.pillClass;
+    const pillLabel = showWorking ? "Working..." : statusInfo.label;
+    const showSpinner = showWorking || statusInfo.spinning;
+    const showDetail = !showWorking && statusInfo.detail;
+    const detailTone =
+      statusInfo.phase === "failed"
+        ? "text-red-400/80"
+        : statusInfo.phase === "stalled"
+          ? "text-yellow-400/70"
+          : "text-dsm-muted/60";
+    const detailHtml = showDetail
+      ? `<span class="block max-w-[110px] truncate text-[9px] leading-tight ${detailTone}" title="${escHtml(statusInfo.tooltip || statusInfo.detail)}">${escHtml(statusInfo.detail)}</span>`
+      : "";
 
     const uptimeHtml =
-      c.running && c.uptime && !showLoading
+      statusInfo.phase === "running" && c.uptime && !isManualLoading
         ? `<span class="text-[9px] font-mono text-dsm-muted/60 leading-none pl-0.5 mt-0.5">${escHtml(c.uptime)}</span>`
         : "";
+
+    const isRunning = statusInfo.phase === "running";
+    const desiredUp = statusInfo.desiredReplicas > 0;
+    const startAction = isRunning ? "restart" : "start";
+    const startIcon = isRunning || desiredUp ? "rotate-ccw" : "play";
+    const startTitle = isRunning
+      ? "Restart"
+      : desiredUp
+        ? "Redeploy (force new task)"
+        : "Start";
+    const startButtonClass = isRunning
+      ? "text-yellow-400/80 hover:text-yellow-400 hover:bg-yellow-400/10 border border-yellow-400/20"
+      : desiredUp
+        ? "text-orange-300/90 hover:text-orange-200 hover:bg-orange-400/10 border border-orange-400/25"
+        : "text-green-400/80 hover:text-green-400 hover:bg-green-400/10 border border-green-400/20";
 
     const tr = document.createElement("tr");
     tr.dataset["svc"] = shortName(c.name);
@@ -645,21 +851,22 @@ function renderTable(): void {
       <td class="font-mono text-[10px] text-dsm-muted truncate" title="${escHtml(c.image)}">${escHtml(c.image)}</td>
       <td>
         <div class="flex flex-col items-start gap-0.5">
-          <span class="${pillClass}">${showLoading ? '<span class="pill-spinner"></span>' : '<span class="pill-dot"></span>'} ${pillLabel}</span>
+          <span class="${pillClass}" title="${escHtml(statusInfo.tooltip)}">${showSpinner ? '<span class="pill-spinner"></span>' : '<span class="pill-dot"></span>'} ${escHtml(pillLabel)}</span>
+          ${detailHtml}
           ${uptimeHtml}
         </div>
       </td>
       <td class="!pr-2">
         <div class="flex items-center gap-1 justify-end">
           <button
-            class="flex items-center justify-center w-6 h-6 rounded transition-colors ${c.running ? "text-yellow-400/80 hover:text-yellow-400 hover:bg-yellow-400/10 border border-yellow-400/20" : "text-green-400/80 hover:text-green-400 hover:bg-green-400/10 border border-green-400/20"}"
+            class="flex items-center justify-center w-6 h-6 rounded transition-colors ${startButtonClass}"
             data-id="${fullName}"
-            data-action="${c.running ? "restart" : "start"}"
-            title="${c.running ? "Restart" : "Start"}">
-            <i data-lucide="${c.running ? "rotate-ccw" : "play"}" class="icon-xs"></i>
+            data-action="${startAction}"
+            title="${startTitle}">
+            <i data-lucide="${startIcon}" class="icon-xs"></i>
           </button>
           ${
-            c.running
+            desiredUp || c.running
               ? `<button class="flex items-center justify-center w-6 h-6 rounded border border-red-400/20 text-red-400/70 hover:text-red-400 hover:bg-red-400/10 transition-colors" data-id="${fullName}" data-action="stop" title="Stop"><i data-lucide="square" class="icon-xs"></i></button>`
               : `<span class="w-6 h-6 flex-shrink-0 inline-block"></span>`
           }
@@ -691,11 +898,12 @@ function renderTable(): void {
       e.preventDefault();
       const svc = tr.dataset["svc"]!;
       const fullName = tr.dataset["fullname"]!;
-      const isRunning = tr.dataset["running"] === "true";
+      const container = containers.find((item) => item.name === fullName);
+      if (!container) return;
       const buildPath = api
         ? await api.findBuildScript(svc, settings.visionPath)
         : null;
-      openCtxMenu(svc, fullName, isRunning, buildPath, e.clientX, e.clientY);
+      openCtxMenu(svc, container, buildPath, e.clientX, e.clientY);
     });
   }
 
@@ -766,17 +974,25 @@ function closeGroupPicker(): void {
 // ── Context menu ──────────────────────────────────────────────────────────────────
 function openCtxMenu(
   svcName: string,
-  containerName: string,
-  isRunning: boolean,
+  container: ContainerInfo,
   buildPath: string | null,
   x: number,
   y: number,
 ): void {
   ctxService = svcName;
-  ctxContainerName = containerName;
+  ctxContainerName = container.name;
+  ctxServiceInfo = container;
   ctxBuildPath = buildPath;
+  const status = getServiceStatus(container);
+  const hasError = status.phase === "failed" || status.phase === "stalled";
+
   // Label start vs restart
-  ctxStartLabel.textContent = isRunning ? "Restart" : "Start";
+  ctxStartLabel.textContent =
+    status.phase === "running"
+      ? "Restart"
+      : hasError
+        ? "Redeploy"
+        : "Start";
   // Toggle build option
   if (buildPath) {
     ctxBuildBtn.classList.remove("hidden");
@@ -785,12 +1001,19 @@ function openCtxMenu(
     ctxBuildBtn.classList.add("hidden");
     ctxBuildDivider.classList.add("hidden");
   }
-  const menuW = 188;
-  const menuH = buildPath ? 176 : 132;
-  ctxMenuEl.style.left = `${Math.min(x, window.innerWidth - menuW - 8)}px`;
-  ctxMenuEl.style.top = `${Math.min(y, window.innerHeight - menuH - 8)}px`;
+  ctxAiBtn.disabled = !hasError;
+  ctxAiBtn.title = hasError
+    ? "Analyze the last task error with AI"
+    : "Service has no detected error";
+
   ctxMenuEl.classList.remove("hidden");
   renderLucide();
+  const menuW = ctxMenuEl.offsetWidth;
+  const menuH = ctxMenuEl.offsetHeight;
+  const left = Math.max(8, Math.min(x, window.innerWidth - menuW - 8));
+  const top = Math.max(8, Math.min(y, window.innerHeight - menuH - 8));
+  ctxMenuEl.style.left = `${left}px`;
+  ctxMenuEl.style.top = `${top}px`;
 }
 
 function closeCtxMenu(): void {
@@ -798,6 +1021,7 @@ function closeCtxMenu(): void {
   ctxService = null;
   ctxBuildPath = null;
   ctxContainerName = null;
+  ctxServiceInfo = null;
 }
 
 ctxStartBtn.addEventListener("click", () => {
@@ -840,6 +1064,110 @@ ctxChmodBtn.addEventListener("click", () => {
     showToast("No build script found for this service.", "error");
   }
   closeCtxMenu();
+});
+
+ctxAiBtn.addEventListener("click", () => {
+  const container = ctxServiceInfo;
+  closeCtxMenu();
+  if (container) void analyzeServiceErrorWithAi(container);
+});
+
+function closeAiModal(): void {
+  aiRequestSerial += 1;
+  aiModalEl.classList.add("hidden");
+}
+
+async function analyzeServiceErrorWithAi(
+  container: ContainerInfo,
+): Promise<void> {
+  if (!api) return;
+  const providerInfo = getAiProviderInfo(settings.aiProvider);
+  const serviceLabel = shortName(container.name);
+
+  const keyStatus = await api.getAiKeyStatus(providerInfo.id);
+  if (providerInfo.requiresKey && !keyStatus.hasKey) {
+    showToast(
+      `Configure the ${providerInfo.label} API key in Settings → AI Error Analysis.`,
+      "error",
+    );
+    openSettingsModal();
+    return;
+  }
+  if (
+    providerInfo.requiresEndpoint &&
+    !settings.aiAzureEndpoint.trim()
+  ) {
+    showToast("Configure the Azure OpenAI endpoint in Settings.", "error");
+    openSettingsModal();
+    return;
+  }
+  if (
+    providerInfo.requiresDeployment &&
+    !settings.aiAzureDeployment.trim()
+  ) {
+    showToast("Configure the Azure OpenAI deployment in Settings.", "error");
+    openSettingsModal();
+    return;
+  }
+
+  aiModalTitleEl.textContent = `AI Error Analysis · ${serviceLabel}`;
+  aiModalMetaEl.textContent = `Analyzing with ${providerInfo.label}...`;
+  aiModalResultEl.textContent =
+    "Consultando o provedor de IA. Isso pode levar alguns segundos...";
+  aiModalCopyBtn.disabled = true;
+  aiModalEl.classList.remove("hidden");
+  renderLucide();
+  const serial = ++aiRequestSerial;
+
+  const request: AiAnalyzeRequest = {
+    provider: settings.aiProvider,
+    model: settings.aiModel,
+    azureEndpoint: settings.aiAzureEndpoint,
+    azureDeployment: settings.aiAzureDeployment,
+    ollamaUrl: settings.aiOllamaUrl,
+    includeLogs: settings.aiIncludeLogs,
+    serviceName: serviceLabel,
+    image: container.image,
+    status: container.status,
+    taskState: container.taskState,
+    taskError: container.taskError,
+    updateState: container.updateState,
+    updateMessage: container.updateMessage,
+  };
+
+  const result: AiAnalyzeResult = await api.analyzeServiceError(request);
+  if (serial !== aiRequestSerial) return;
+  if (!result.ok) {
+    aiModalMetaEl.textContent = `${providerInfo.label} · error`;
+    aiModalResultEl.textContent = result.error ?? "Unknown error";
+    return;
+  }
+
+  aiModalMetaEl.textContent = [
+    providerInfo.label,
+    result.model,
+    result.includesLogs ? "includes recent logs" : "no logs sent",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  aiModalResultEl.textContent = result.analysis ?? "";
+  aiModalCopyBtn.disabled = false;
+}
+
+aiModalCloseBtn.addEventListener("click", closeAiModal);
+aiModalCloseFooterBtn.addEventListener("click", closeAiModal);
+aiModalEl.addEventListener("click", (e) => {
+  if (e.target === aiModalEl) closeAiModal();
+});
+aiModalCopyBtn.addEventListener("click", async () => {
+  const text = aiModalResultEl.textContent ?? "";
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("Analysis copied.", "success");
+  } catch {
+    showToast("Could not copy the analysis.", "error");
+  }
 });
 
 ctxTerminalBtn.addEventListener("click", () => {
@@ -911,6 +1239,7 @@ document.addEventListener("keydown", (e) => {
     closeGroupPicker();
     closeCtxMenu();
     closeSettingsModal();
+    closeAiModal();
   }
 });
 
@@ -930,12 +1259,79 @@ async function checkSettingsPath(testPath: string): Promise<void> {
   }
 }
 
+function populateAiProviderOptions(): void {
+  if (settingsAiProviderEl.options.length > 0) return;
+  for (const provider of AI_PROVIDERS) {
+    const option = document.createElement("option");
+    option.value = provider.id;
+    option.textContent = provider.label;
+    settingsAiProviderEl.appendChild(option);
+  }
+}
+
+function currentAiProvider(): ReturnType<typeof getAiProviderInfo> {
+  return getAiProviderInfo(settingsAiProviderEl.value);
+}
+
+async function refreshAiKeyStatus(): Promise<void> {
+  const info = currentAiProvider();
+  settingsAiKeyStatusEl.className = "text-[11px] text-dsm-muted/60";
+  settingsAiKeyStatusEl.textContent = "";
+  settingsAiClearKeyBtn.classList.add("hidden");
+  if (!api) return;
+
+  const providerId = info.id;
+  const status = await api.getAiKeyStatus(providerId);
+  if (settingsAiProviderEl.value !== providerId) return;
+
+  if (status.hasKey) {
+    settingsAiKeyStatusEl.className = "text-[11px] text-green-400";
+    settingsAiKeyStatusEl.textContent = status.encrypted
+      ? "API key saved (encrypted by the OS)."
+      : "API key saved (not encrypted — OS keychain unavailable).";
+    settingsAiClearKeyBtn.classList.remove("hidden");
+  } else if (info.requiresKey) {
+    settingsAiKeyStatusEl.className = "text-[11px] text-yellow-400";
+    settingsAiKeyStatusEl.textContent = "No API key saved for this provider.";
+  } else {
+    settingsAiKeyStatusEl.textContent = "No API key required for this provider.";
+  }
+}
+
+function syncAiProviderRows(): void {
+  const info = currentAiProvider();
+  settingsAiModelEl.placeholder =
+    info.defaultModel || (info.id === "azure" ? "Deployment name" : "Provider default");
+  settingsAiModelHintEl.textContent = info.defaultModel
+    ? `Leave the model empty to use ${info.defaultModel}.`
+    : info.id === "azure"
+      ? "Azure uses the deployment name as the model."
+      : "";
+  settingsAiAzureRowsEl.classList.toggle("hidden", info.id !== "azure");
+  settingsAiOllamaRowEl.classList.toggle("hidden", info.id !== "ollama");
+  settingsAiKeyEl.placeholder = info.requiresKey
+    ? "Paste API key"
+    : "Optional for local providers";
+  void refreshAiKeyStatus();
+}
+
 function openSettingsModal(): void {
   settingsVisionPathEl.value = settings.visionPath;
   settingsUseWslEl.checked = settings.useWsl;
   settingsWslDistroEl.value = settings.wslDistro;
   settingsWslDistroRowEl.classList.toggle("hidden", !settings.useWsl);
   settingsPathStatusEl.classList.add("hidden");
+
+  populateAiProviderOptions();
+  settingsAiProviderEl.value = settings.aiProvider;
+  settingsAiModelEl.value = settings.aiModel;
+  settingsAiAzureEndpointEl.value = settings.aiAzureEndpoint;
+  settingsAiAzureDeploymentEl.value = settings.aiAzureDeployment;
+  settingsAiOllamaUrlEl.value = settings.aiOllamaUrl;
+  settingsAiIncludeLogsEl.checked = settings.aiIncludeLogs;
+  settingsAiKeyEl.value = "";
+  syncAiProviderRows();
+
   settingsModalEl.classList.remove("hidden");
   renderLucide();
   settingsVisionPathEl.focus();
@@ -959,6 +1355,28 @@ settingsUseWslEl.addEventListener("change", () => {
   settingsWslDistroRowEl.classList.toggle("hidden", !settingsUseWslEl.checked);
 });
 
+settingsAiProviderEl.addEventListener("change", () => {
+  settingsAiKeyEl.value = "";
+  syncAiProviderRows();
+});
+
+settingsAiClearKeyBtn.addEventListener("click", async () => {
+  if (!api) return;
+  const info = currentAiProvider();
+  const confirmed = await showConfirmModal(
+    "Remove API Key",
+    `Remove the saved API key for ${info.label}?`,
+  );
+  if (!confirmed) return;
+  const result = await api.clearAiApiKey(info.id);
+  if (!result.ok) {
+    showToast(`Error removing API key: ${result.error ?? "unknown error"}`, "error");
+    return;
+  }
+  showToast("API key removed.", "success");
+  await refreshAiKeyStatus();
+});
+
 (
   document.getElementById("settingsClose") as HTMLButtonElement
 ).addEventListener("click", closeSettingsModal);
@@ -968,14 +1386,37 @@ settingsUseWslEl.addEventListener("change", () => {
 
 (document.getElementById("settingsSave") as HTMLButtonElement).addEventListener(
   "click",
-  () => {
+  async () => {
     settings = {
       visionPath:
         settingsVisionPathEl.value.trim() || DEFAULT_SETTINGS.visionPath,
       useWsl: settingsUseWslEl.checked,
       wslDistro: settingsWslDistroEl.value.trim() || DEFAULT_SETTINGS.wslDistro,
+      aiProvider:
+        (settingsAiProviderEl.value as AiProvider) ||
+        DEFAULT_SETTINGS.aiProvider,
+      aiModel: settingsAiModelEl.value.trim(),
+      aiAzureEndpoint: settingsAiAzureEndpointEl.value.trim(),
+      aiAzureDeployment: settingsAiAzureDeploymentEl.value.trim(),
+      aiOllamaUrl:
+        settingsAiOllamaUrlEl.value.trim() || DEFAULT_SETTINGS.aiOllamaUrl,
+      aiIncludeLogs: settingsAiIncludeLogsEl.checked,
     };
     persistSettings(settings);
+
+    const newKey = settingsAiKeyEl.value.trim();
+    if (newKey && api) {
+      const result = await api.saveAiApiKey(settings.aiProvider, newKey);
+      if (!result.ok) {
+        showToast(
+          `Error saving API key: ${result.error ?? "unknown error"}`,
+          "error",
+        );
+        return;
+      }
+      settingsAiKeyEl.value = "";
+    }
+    await refreshAiKeyStatus();
     closeSettingsModal();
     showToast("Settings saved.", "success");
   },
@@ -1071,59 +1512,43 @@ async function runAction(action: Action, ids: string[]): Promise<void> {
     showToast("No container selected.", "error");
     return;
   }
-  // Mark containers as loading
-  ids.forEach((id) => loadingContainers.add(id));
+  // Map service IDs back to names so the row spinners light up for bulk actions too
+  const names = ids.map(
+    (id) => containers.find((c) => c.id === id || c.name === id)?.name ?? id,
+  );
+  names.forEach((name) => loadingContainers.add(name));
   renderTable();
   setStatus(`Running ${action} on ${ids.length} container(s)...`);
   if (!api) {
     setStatus("Electron API unavailable (preload).", "error");
     showToast("Electron API unavailable (preload).", "error");
-    ids.forEach((id) => loadingContainers.delete(id));
+    names.forEach((name) => loadingContainers.delete(name));
     renderTable();
     return;
   }
 
-  if (action === "restart") {
-    const stopRes = await api.controlContainers("stop", ids);
-    if (!stopRes.ok) {
-      const msg = `Error stopping for restart: ${stopRes.error ?? "unknown error"}`;
-      setStatus(msg, "error");
-      showToast(msg, "error");
-      ids.forEach((id) => loadingContainers.delete(id));
-      renderTable();
-      return;
-    }
-    await new Promise<void>((r) => setTimeout(r, 600));
-    const startRes = await api.controlContainers("start", ids);
-    if (!startRes.ok) {
-      const msg = `Error starting on restart: ${startRes.error ?? "unknown error"}`;
-      setStatus(msg, "error");
-      showToast(msg, "error");
-      ids.forEach((id) => loadingContainers.delete(id));
-      renderTable();
-      return;
-    }
-    const okMsg = `Restart completed on ${ids.length} container(s).`;
-    setStatus(okMsg, "ok");
-    showToast(okMsg, "success");
-    ids.forEach((id) => loadingContainers.delete(id));
-    await refreshContainers();
-    return;
-  }
-
-  const result = await api.controlContainers(action, ids);
+  // A restart is a force-redeploy in Swarm: scale to 1 and create a new task.
+  // Using a single update avoids the race between scale-down and scale-up.
+  const apiAction: Action = action === "restart" ? "start" : action;
+  const result = await api.controlContainers(apiAction, ids);
   if (!result.ok) {
     const msg = `Error running ${action}: ${result.error ?? "unknown error"}`;
     setStatus(msg, "error");
     showToast(msg, "error");
-    ids.forEach((id) => loadingContainers.delete(id));
+    names.forEach((name) => loadingContainers.delete(name));
     renderTable();
     return;
   }
-  const okMsg = `${action.charAt(0).toUpperCase() + action.slice(1)} completed on ${result.changed ?? 0} container(s).`;
-  setStatus(okMsg, "ok");
-  showToast(okMsg, "success");
-  ids.forEach((id) => loadingContainers.delete(id));
+  const verb = action === "restart" ? "Restart" : action.charAt(0).toUpperCase() + action.slice(1);
+  const okMsg = `${verb} completed on ${result.changed ?? 0} container(s).`;
+  if (result.warning) {
+    setStatus(result.warning, "error");
+    showToast(result.warning, "error");
+  } else {
+    setStatus(okMsg, "ok");
+    showToast(okMsg, "success");
+  }
+  names.forEach((name) => loadingContainers.delete(name));
   await refreshContainers();
 }
 
@@ -1300,14 +1725,22 @@ if (modalSearchEl) {
 (document.getElementById("startAll") as HTMLButtonElement).addEventListener(
   "click",
   async () => {
+    const targets = visibleContainers().filter(
+      (c) => getServiceStatus(c).phase !== "running",
+    );
+    if (!targets.length) {
+      showToast("All visible services are already running.", "success");
+      setStatus("All visible services are already running.", "ok");
+      return;
+    }
     const confirmed = await showConfirmModal(
       "Start All Services",
-      "Are you sure you want to START ALL visible services?",
+      `Are you sure you want to START/REDEPLOY ${targets.length} visible service(s)?`,
     );
     if (confirmed) {
       void runAction(
         "start",
-        visibleContainers().map((c) => c.id),
+        targets.map((c) => c.id),
       );
     }
   }
@@ -1492,6 +1925,7 @@ function initColResize(): void {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (document.getElementById("appVersion") as HTMLSpanElement).textContent =
   `v${pkg.version}`;
+populateAiProviderOptions();
 renderLucide();
 void refreshContainers().then(() => {
   startAutoRefresh(parseInt(intervalSel.value, 10));

@@ -11,6 +11,55 @@ def run(cmd):
     return result.stdout.strip()
 
 
+def strip_task_slot(task_name):
+    """'vision_redis.1.abc123' -> 'vision_redis'; 'vision_redis.1' -> 'vision_redis'"""
+    parts = task_name.split('.')
+    if len(parts) >= 3:
+        return '.'.join(parts[:-2])
+    if len(parts) == 2:
+        return parts[0]
+    return task_name
+
+
+def get_service_tasks(service_ids):
+    """Returns the most recent task info for each service.
+
+    Result: {service_name -> {taskState, taskDesiredState, taskError}}
+    """
+    if not service_ids:
+        return {}
+    try:
+        output = run([
+            'docker', 'service', 'ps',
+            '--no-trunc',
+            '--format', '{{.Name}}|{{.DesiredState}}|{{.CurrentState}}|{{.Error}}',
+            *service_ids
+        ])
+    except Exception:
+        return {}
+
+    tasks = {}
+    for line in output.split('\n'):
+        if not line.strip():
+            continue
+        parts = line.split('|', 3)
+        if len(parts) < 4:
+            continue
+        task_name, desired_state, current_state, error = parts
+        svc_name = strip_task_slot(task_name)
+        # docker lists the newest task first for each service
+        if not svc_name or svc_name in tasks:
+            continue
+        if error.startswith('"') and error.endswith('"'):
+            error = error[1:-1]
+        tasks[svc_name] = {
+            'taskState': current_state,
+            'taskDesiredState': desired_state,
+            'taskError': error,
+        }
+    return tasks
+
+
 def get_service_uptimes(service_ids):
     """Returns dict {service_name -> uptime_string} for running tasks."""
     if not service_ids:
@@ -31,9 +80,7 @@ def get_service_uptimes(service_ids):
             if len(parts) != 2:
                 continue
             task_name, state = parts
-            # task_name like "vision_contractsservice.1" → strip trailing .N
-            dot_pos = task_name.rfind('.')
-            svc_name = task_name[:dot_pos] if dot_pos > 0 else task_name
+            svc_name = strip_task_slot(task_name)
             # state like "Running 2 hours ago" → extract "2 hours ago"
             if state.startswith('Running '):
                 uptime = state[len('Running '):]
@@ -44,6 +91,34 @@ def get_service_uptimes(service_ids):
         return uptimes
     except Exception:
         return {}
+
+
+def get_update_states(service_ids):
+    """Returns {service_id -> {updateState, updateMessage}}."""
+    if not service_ids:
+        return {}
+    try:
+        output = run([
+            'docker', 'service', 'inspect',
+            '--format', '{{.ID}}|{{.UpdateStatus.State}}|{{.UpdateStatus.Message}}',
+            *service_ids
+        ])
+    except Exception:
+        return {}
+
+    states = {}
+    for line in output.split('\n'):
+        if not line.strip():
+            continue
+        parts = line.split('|', 2)
+        if len(parts) < 3:
+            continue
+        sid, state, message = parts
+        states[sid] = {
+            'updateState': '' if state == '<no value>' else state,
+            'updateMessage': '' if message == '<no value>' else message,
+        }
+    return states
 
 
 def list_services():
@@ -79,8 +154,22 @@ def list_services():
         })
 
     uptimes = get_service_uptimes([s['id'] for s in services])
+    tasks = get_service_tasks([s['id'] for s in services])
+    update_states = get_update_states([s['id'] for s in services])
     for s in services:
         s['uptime'] = uptimes.get(s['name'], '')
+        task = tasks.get(s['name'], {})
+        s['taskState'] = task.get('taskState', '')
+        s['taskDesiredState'] = task.get('taskDesiredState', '')
+        s['taskError'] = task.get('taskError', '')
+        update = update_states.get(s['id'])
+        if update is None:
+            update = next(
+                (value for key, value in update_states.items() if key.startswith(s['id'])),
+                {},
+            )
+        s['updateState'] = update.get('updateState', '')
+        s['updateMessage'] = update.get('updateMessage', '')
 
     return services
 
@@ -90,16 +179,48 @@ def control(action, names):
         raise RuntimeError('invalid action')
     if not names:
         return {'changed': 0}
-    if action == 'stop':
-        scale_args = [f'{n}=0' for n in names]
-        run(['docker', 'service', 'scale', '--detach', *scale_args])
-    else:
-        # Scale to 1 first, then force-update to re-deploy any stuck tasks
-        scale_args = [f'{n}=1' for n in names]
-        run(['docker', 'service', 'scale', '--detach', *scale_args])
-        for n in names:
-            run(['docker', 'service', 'update', '--force', '--detach', '--with-registry-auth', n])
-    return {'changed': len(names)}
+
+    failures = []
+    changed = 0
+    for name in names:
+        try:
+            if action == 'stop':
+                run(['docker', 'service', 'scale', '--detach', f'{name}=0'])
+            else:
+                # Set replicas and force a brand-new task in a single update.
+                # This also resumes updates that are paused after a failed task.
+                try:
+                    run([
+                        'docker', 'service', 'update',
+                        '--replicas', '1',
+                        '--force',
+                        '--detach',
+                        '--with-registry-auth',
+                        name,
+                    ])
+                except RuntimeError as exc:
+                    # --replicas is invalid for global/job services; just force a new task
+                    if 'replicated' not in str(exc).lower():
+                        raise
+                    run([
+                        'docker', 'service', 'update',
+                        '--force',
+                        '--detach',
+                        '--with-registry-auth',
+                        name,
+                    ])
+            changed += 1
+        except Exception as exc:
+            failures.append(f'{name}: {exc}')
+
+    if failures and changed == 0:
+        raise RuntimeError('; '.join(failures))
+
+    result = {'changed': changed}
+    if failures:
+        result['failed'] = failures
+        result['warning'] = f'{len(failures)} service(s) failed to {action}: ' + '; '.join(failures)
+    return result
 
 
 def main():

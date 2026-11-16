@@ -190,7 +190,7 @@
               <button
                 id="startAll"
                 class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium text-green-400 bg-green-500/10 border border-green-500/25 hover:bg-green-500/20 transition-colors"
-                title="Start all visible services"
+                title="Start all stopped/failed visible services"
               >
                 <i data-lucide="play" class="icon-xs"></i> Start
               </button>
@@ -615,6 +615,15 @@
       </button>
       <div class="border-t border-dsm-border2 my-1"></div>
       <button
+        id="ctxAi"
+        class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-dsm-muted hover:text-dsm-text hover:bg-cyan-500/10 hover:text-cyan-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-dsm-muted"
+        disabled
+        title="Analyze the last task error with AI"
+      >
+        <i data-lucide="sparkles" class="icon-xs text-cyan-400"></i> Analyze
+        error with AI
+      </button>
+      <button
         id="ctxChmod"
         class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-dsm-muted hover:text-dsm-text hover:bg-orange-500/10 hover:text-orange-300 transition-colors"
         title="Fix .sh permissions (chmod +x *.sh)"
@@ -629,7 +638,7 @@
       class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
     >
       <div
-        class="w-[460px] flex flex-col rounded-xl bg-dsm-panel border border-dsm-border shadow-2xl"
+        class="w-[460px] max-h-[90vh] flex flex-col rounded-xl bg-dsm-panel border border-dsm-border shadow-2xl"
       >
         <!-- Header -->
         <div
@@ -648,7 +657,7 @@
         </div>
 
         <!-- Body -->
-        <div class="px-5 py-5 space-y-5">
+        <div class="px-5 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
           <!-- Vision Path -->
           <div class="flex flex-col gap-1.5">
             <label
@@ -736,6 +745,135 @@
               </p>
             </div>
           </div>
+
+          <!-- Divider -->
+          <div class="border-t border-dsm-border2"></div>
+
+          <!-- AI error analysis -->
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="sparkles" class="icon-sm text-cyan-400"></i>
+              <div>
+                <p class="text-[12px] font-medium text-dsm-text">
+                  AI Error Analysis
+                </p>
+                <p class="text-[11px] text-dsm-muted/70 mt-0.5">
+                  Right-click a failed or stalled service to analyze the error.
+                </p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div class="flex flex-col gap-1.5">
+                <label
+                  class="text-[11px] font-semibold text-dsm-muted uppercase tracking-wider"
+                  >Provider</label
+                >
+                <select
+                  id="settingsAiProvider"
+                  class="px-3 py-2 rounded-lg bg-dsm-panel2 border border-dsm-border text-dsm-text text-[12px] focus:outline-none focus:border-dsm-primary cursor-pointer"
+                ></select>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label
+                  class="text-[11px] font-semibold text-dsm-muted uppercase tracking-wider"
+                  >Model</label
+                >
+                <input
+                  type="text"
+                  id="settingsAiModel"
+                  placeholder="Provider default"
+                  spellcheck="false"
+                  class="px-3 py-2 rounded-lg bg-dsm-panel2 border border-dsm-border text-dsm-text text-[12px] font-mono placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary transition-colors"
+                />
+              </div>
+            </div>
+            <p id="settingsAiModelHint" class="text-[11px] text-dsm-muted/60"></p>
+
+            <div id="settingsAiAzureRows" class="hidden grid grid-cols-2 gap-3">
+              <div class="flex flex-col gap-1.5">
+                <label
+                  class="text-[11px] font-semibold text-dsm-muted uppercase tracking-wider"
+                  >Azure Endpoint</label
+                >
+                <input
+                  type="text"
+                  id="settingsAiAzureEndpoint"
+                  placeholder="https://your-resource.openai.azure.com"
+                  spellcheck="false"
+                  class="px-3 py-2 rounded-lg bg-dsm-panel2 border border-dsm-border text-dsm-text text-[11px] font-mono placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary transition-colors"
+                />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label
+                  class="text-[11px] font-semibold text-dsm-muted uppercase tracking-wider"
+                  >Deployment</label
+                >
+                <input
+                  type="text"
+                  id="settingsAiAzureDeployment"
+                  placeholder="gpt-4o-mini"
+                  spellcheck="false"
+                  class="px-3 py-2 rounded-lg bg-dsm-panel2 border border-dsm-border text-dsm-text text-[11px] font-mono placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary transition-colors"
+                />
+              </div>
+            </div>
+
+            <div id="settingsAiOllamaRow" class="hidden flex flex-col gap-1.5">
+              <label
+                class="text-[11px] font-semibold text-dsm-muted uppercase tracking-wider"
+                >Ollama Base URL</label
+              >
+              <input
+                type="text"
+                id="settingsAiOllamaUrl"
+                placeholder="http://localhost:11434/v1"
+                spellcheck="false"
+                class="px-3 py-2 rounded-lg bg-dsm-panel2 border border-dsm-border text-dsm-text text-[12px] font-mono placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary transition-colors"
+              />
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <label
+                class="text-[11px] font-semibold text-dsm-muted uppercase tracking-wider"
+                >API Key</label
+              >
+              <div class="flex gap-2">
+                <input
+                  type="password"
+                  id="settingsAiKey"
+                  placeholder="Paste API key"
+                  spellcheck="false"
+                  autocomplete="off"
+                  class="flex-1 px-3 py-2 rounded-lg bg-dsm-panel2 border border-dsm-border text-dsm-text text-[12px] font-mono placeholder:text-dsm-muted focus:outline-none focus:border-dsm-primary transition-colors"
+                />
+                <button
+                  id="settingsAiClearKey"
+                  class="hidden px-3 py-2 rounded-lg text-[11px] font-medium text-red-400 border border-red-400/30 hover:bg-red-400/10 transition-colors whitespace-nowrap"
+                >
+                  Remove
+                </button>
+              </div>
+              <div id="settingsAiKeyStatus" class="text-[11px] text-dsm-muted/60"></div>
+            </div>
+
+            <label
+              class="flex items-center gap-2 text-[11px] text-dsm-muted/80 cursor-pointer select-none"
+            >
+              <input
+                type="checkbox"
+                id="settingsAiIncludeLogs"
+                class="accent-dsm-primary"
+                checked
+              />
+              Include the last 120 log lines in the analysis
+            </label>
+
+            <p class="text-[11px] text-dsm-muted/50">
+              The key is stored locally and only sent to the selected AI
+              provider when you request an analysis.
+            </p>
+          </div>
         </div>
 
         <!-- Footer -->
@@ -763,6 +901,61 @@
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- AI analysis modal -->
+    <div
+      id="aiModal"
+      class="hidden fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    >
+      <div
+        class="w-[680px] max-h-[85vh] flex flex-col rounded-xl bg-dsm-panel border border-dsm-border shadow-2xl"
+      >
+        <div
+          class="flex items-center justify-between px-5 py-3.5 border-b border-dsm-border flex-shrink-0"
+        >
+          <div class="flex items-center gap-2 min-w-0">
+            <i data-lucide="sparkles" class="icon-sm text-cyan-400 flex-shrink-0"></i>
+            <h3
+              id="aiModalTitle"
+              class="text-sm font-semibold text-dsm-text truncate"
+            >
+              AI Error Analysis
+            </h3>
+          </div>
+          <button
+            id="aiModalClose"
+            class="icon-sm p-1 rounded text-dsm-muted hover:text-dsm-text hover:bg-white/5 transition-colors flex-shrink-0"
+          >
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div class="px-5 py-4 flex-1 overflow-y-auto">
+          <p id="aiModalMeta" class="text-[11px] text-dsm-muted/70 mb-3"></p>
+          <pre
+            id="aiModalResult"
+            class="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-dsm-text/90 font-sans"
+          ></pre>
+        </div>
+        <div
+          class="flex items-center gap-2 px-5 py-3.5 border-t border-dsm-border flex-shrink-0"
+        >
+          <button
+            id="aiModalCopy"
+            class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-medium text-dsm-muted border border-dsm-border hover:text-dsm-text hover:border-dsm-muted transition-colors"
+          >
+            <i data-lucide="copy" class="icon-xs"></i> Copy
+          </button>
+          <button
+            id="aiModalCloseBtn"
+            class="px-4 py-1.5 rounded-lg text-[12px] font-medium bg-dsm-primary text-white hover:bg-dsm-primary-h transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Custom Confirmation Modal -->
     <div
       id="confirmModal"

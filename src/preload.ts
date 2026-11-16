@@ -32,4 +32,14 @@ contextBridge.exposeInMainWorld("dockerApi", {
     ipcRenderer.invoke("rawcontainers:logs", containerId),
   execContainer: (containerId: string) =>
     ipcRenderer.invoke("rawcontainers:exec", containerId),
+
+  // ── AI error analysis ───────────────────────────────────────────────────────
+  getAiKeyStatus: (provider: string) =>
+    ipcRenderer.invoke("ai:keyStatus", provider),
+  saveAiApiKey: (provider: string, key: string) =>
+    ipcRenderer.invoke("ai:saveKey", provider, key),
+  clearAiApiKey: (provider: string) =>
+    ipcRenderer.invoke("ai:clearKey", provider),
+  analyzeServiceError: (request: unknown) =>
+    ipcRenderer.invoke("ai:analyze", request),
 });

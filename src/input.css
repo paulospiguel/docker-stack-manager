@@ -98,6 +98,12 @@
     border: 1px solid rgba(212, 153, 34, 0.35);
     animation: pulse-border 2s infinite ease-in-out;
   }
+  .pill-warning {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium leading-none shadow-sm;
+    background: rgba(212, 153, 34, 0.12);
+    color: #d29922;
+    border: 1px solid rgba(212, 153, 34, 0.35);
+  }
   .pill-dot {
     @apply w-1.5 h-1.5 rounded-full bg-current flex-shrink-0;
   }

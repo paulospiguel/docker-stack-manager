@@ -34,19 +34,26 @@ if [[ "$cmd" == "start" || "$cmd" == "stop" ]]; then
     echo '{"ok":true,"changed":0}'
     exit 0
   fi
+  changed=0
   if [[ "$cmd" == "stop" ]]; then
-    scale_args=()
-    for name in "$@"; do scale_args+=("${name}=0"); done
-    docker service scale --detach "${scale_args[@]}" >/dev/null
-  else
-    scale_args=()
-    for name in "$@"; do scale_args+=("${name}=1"); done
-    docker service scale --detach "${scale_args[@]}" >/dev/null
     for name in "$@"; do
-      docker service update --force --detach --with-registry-auth "$name" >/dev/null
+      if docker service scale --detach "${name}=0" >/dev/null 2>&1; then
+        changed=$((changed + 1))
+      fi
+    done
+  else
+    for name in "$@"; do
+      # Set replicas and force a new task in one update (recovers stuck/paused services)
+      if docker service update --replicas 1 --force --detach --with-registry-auth "$name" >/dev/null 2>&1; then
+        changed=$((changed + 1))
+      fi
     done
   fi
-  echo "{\"ok\":true,\"changed\":$#}"
+  if [[ "$changed" -eq 0 ]]; then
+    echo '{"ok":false,"error":"failed to start/stop all requested services"}'
+    exit 1
+  fi
+  echo "{\"ok\":true,\"changed\":$changed}"
   exit 0
 fi
 
